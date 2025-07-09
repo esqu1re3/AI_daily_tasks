@@ -61,21 +61,24 @@ def send_morning_questions():
         
         logger.info(f"Утренняя рассылка завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
         
-        # Запускаем проверку ответов через некоторое время
+        # Запланируем генерацию сводки ровно через 5 минут
+        summary_time = datetime.now() + timedelta(minutes=5)
         scheduler.add_job(
-            check_responses_and_generate_summary,
+            generate_summary_after_timeout,
             'date',
-            run_date=datetime.now() + timedelta(hours=2),  # Проверяем через 2 часа
-            id='check_responses_first'
+            run_date=summary_time,
+            id='summary_after_5min'
         )
+        
+        logger.info(f"Сводка будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 5 минут)")
         
     except Exception as e:
         logger.error(f"Ошибка в утренней рассылке: {e}")
     finally:
         db.close()
 
-def check_responses_and_generate_summary():
-    """Проверка ответов и генерация сводки если все ответили"""
+def generate_summary_after_timeout():
+    """Генерация сводки через 5 минут после отправки утренних сообщений"""
     db = SessionLocal()
     try:
         # Получаем активных пользователей
@@ -84,39 +87,20 @@ def check_responses_and_generate_summary():
         ).all()
         
         if not active_users:
-            logger.info("Нет активных пользователей")
+            logger.info("Нет активных пользователей для генерации сводки")
             return
         
         # Проверяем кто ответил
         responded_users = [user for user in active_users if user.has_responded_today]
         not_responded_users = [user for user in active_users if not user.has_responded_today]
         
-        logger.info(f"Статус ответов: {len(responded_users)}/{len(active_users)} пользователей ответили")
+        logger.info(f"Время истекло. Статус ответов: {len(responded_users)}/{len(active_users)} пользователей ответили")
         
-        if len(not_responded_users) == 0:
-            # Все ответили - генерируем сводку
-            logger.info("Все пользователи ответили, генерируем сводку")
-            generate_and_send_summary(active_users)
-        else:
-            # Не все ответили - планируем следующую проверку
-            current_hour = datetime.now().hour
-            
-            if current_hour < 18:  # До 18:00 продолжаем ждать
-                next_check = datetime.now() + timedelta(hours=1)
-                scheduler.add_job(
-                    check_responses_and_generate_summary,
-                    'date',
-                    run_date=next_check,
-                    id=f'check_responses_{next_check.strftime("%H%M")}'
-                )
-                logger.info(f"Не все ответили, следующая проверка в {next_check.strftime('%H:%M')}")
-            else:
-                # После 18:00 отправляем сводку с тем что есть
-                logger.info("Рабочий день закончился, отправляем сводку с полученными ответами")
-                generate_and_send_summary(active_users)
+        # Генерируем сводку с тем что есть
+        generate_and_send_summary(active_users)
                 
     except Exception as e:
-        logger.error(f"Ошибка при проверке ответов: {e}")
+        logger.error(f"Ошибка при генерации сводки по таймауту: {e}")
     finally:
         db.close()
 
@@ -138,38 +122,34 @@ def generate_and_send_summary(users):
                 responses.append(f"{username_display}: {user.last_response}")
                 responded_users.append(username_display)
             else:
-                responses.append(f"{username_display}: Не ответил")
                 not_responded_users.append(username_display)
         
-        if not responses:
-            logger.info("Нет ответов для создания сводки")
+        if not responses and not not_responded_users:
+            logger.info("Нет пользователей для создания сводки")
             return
-        
-        # Формируем дополнительную информацию о статусе ответов
-        status_info = ""
-        if not_responded_users:
-            status_info = f"\n\nСтатус ответов: {len(responded_users)} из {len(users)} сотрудников ответили. Не ответили: {', '.join(not_responded_users)}"
-        else:
-            status_info = f"\n\nСтатус ответов: Все {len(users)} сотрудников предоставили свои планы."
         
         # Формируем промпт для Gemini
         prompt = f"""
 Создай краткую сводку планируемых работ команды на сегодня.
 
 Ответы сотрудников:
-{chr(10).join(responses)}{status_info}
+{chr(10).join(responses) if responses else "Никто не ответил"}
 
 Требования к сводке:
 - Кратко и структурированно
 - Выдели основные направления работы
-- Укажи кто чем занимается
-- Упомяни о неответивших ТОЛЬКО если они есть в статусе ответов
-- Общий объем текста до 500 слов
+- Укажи кто чем занимается (только тех, кто ответил)
+- В конце обязательно укажи кто не ответил на утренний вопрос, если такие есть
+- Общий объем текста на каждого сотрудника до 70 слов
 - НЕ используй звездочки для выделения текста
 - НЕ указывай дату в ответе
 - Используй простое форматирование без специальных символов
 
+Информация о неответивших:
+{f"Не ответили: {', '.join(not_responded_users)}" if not_responded_users else "Все сотрудники предоставили свои планы"}
+
 Ответ должен быть в формате краткого отчета для руководителя.
+В конце отчета обязательно укажи статус ответов.
 """
         
         # Генерируем сводку через Gemini
@@ -189,12 +169,24 @@ def generate_and_send_summary(users):
                 summary = future.result(timeout=60)
         
         if not summary:
-            summary = "⚠️ Не удалось сгенерировать сводку через Gemini. Используется базовый отчет:\n\n" + "\n".join(responses)
+            # Формируем базовый отчет если Gemini недоступен
+            basic_summary = "⚠️ Не удалось сгенерировать сводку через Gemini. Базовый отчет:\n\n"
+            if responses:
+                basic_summary += "\n".join(responses)
+            else:
+                basic_summary += "Никто из команды не предоставил планы на сегодня."
+            
+            if not_responded_users:
+                basic_summary += f"\n\nНе ответили: {', '.join(not_responded_users)}"
+            
+            summary = basic_summary
         
         # Формируем финальное сообщение для админа
         final_message = f"📊 Утренняя сводка планов команды\n"
         final_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
-        final_message += f"👥 Участников: {len(users)}\n\n"
+        final_message += f"👥 Участников: {len(users)}\n"
+        final_message += f"✅ Ответили: {len(responded_users)}\n"
+        final_message += f"⏳ Не ответили: {len(not_responded_users)}\n\n"
         final_message += summary
         
         # Отправляем админу
@@ -240,39 +232,14 @@ def process_user_response(user, response_text):
             username_display = f"@{db_user.username}" if db_user.username else f"ID:{db_user.user_id}"
             logger.info(f"Обновлен ответ пользователя {username_display}")
             
-            # Проверяем, не ответили ли все пользователи
-            check_if_all_responded()
+            # Примечание: убираем досрочную проверку всех ответов, 
+            # так как теперь ждем фиксированные 5 минут
             
         else:
             logger.warning(f"Пользователь с user_id {user.id} не найден в базе")
             
     except Exception as e:
         logger.error(f"Ошибка обработки ответа пользователя: {e}")
-    finally:
-        db.close()
-
-def check_if_all_responded():
-    """Проверка, ответили ли все пользователи (для досрочной отправки сводки)"""
-    db = SessionLocal()
-    try:
-        active_users = db.query(User).filter(
-            User.is_active == True
-        ).all()
-        
-        responded_users = [user for user in active_users if user.has_responded_today]
-        
-        if len(responded_users) == len(active_users) and len(active_users) > 0:
-            logger.info("Все пользователи ответили досрочно, генерируем сводку")
-            # Отменяем запланированные проверки
-            for job in scheduler.get_jobs():
-                if job.id.startswith('check_responses'):
-                    scheduler.remove_job(job.id)
-            
-            # Генерируем сводку
-            generate_and_send_summary(active_users)
-            
-    except Exception as e:
-        logger.error(f"Ошибка проверки всех ответов: {e}")
     finally:
         db.close()
 
@@ -291,19 +258,19 @@ def start_scheduler():
                 scheduler.remove_job(job.id)
                 logger.info("Удалена существующая задача morning_questions")
         
-        # Утренняя рассылка в 17:57 по времени Бишкек (UTC+6)
+        # Утренняя рассылка в 9:00 по времени Бишкек (UTC+6)
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=19,  # 17:57 по Бишкеку
-            minute=6,
+            hour=19,  # 9:00 по Бишкеку
+            minute=34,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
         
         if not scheduler.running:
             scheduler.start()
-            logger.info("✅ Scheduler запущен (утренняя рассылка в 17:57 Asia/Bishkek)")
+            logger.info("✅ Scheduler запущен (утренняя рассылка в 9:00 Asia/Bishkek, сводка через 5 минут)")
         
     except Exception as e:
         logger.error(f"❌ Ошибка запуска планировщика: {e}")
