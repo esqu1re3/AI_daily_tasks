@@ -49,6 +49,19 @@ class GeminiService:
         logger.debug("Initializing GeminiService")
         self.api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
 
+    def _post_process_text(self, text: str) -> str:
+        """Постобработка текста от Gemini: удаление звездочек и очистка форматирования"""
+        if not text:
+            return text
+            
+        # Удаляем все звездочки (используемые для markdown форматирования)
+        cleaned_text = text.replace('*', '')
+        
+        # Убираем лишние пробелы, которые могли остаться после удаления звездочек
+        # cleaned_text = ' '.join(cleaned_text.split())
+        
+        return cleaned_text
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def generate_text_async(self, prompt: str):
         logger.debug(f"Sending to Gemini: {prompt[:50]}...")
@@ -70,8 +83,12 @@ class GeminiService:
                     # Упрощенная обработка ответа
                     if "candidates" in data and data["candidates"]:
                         text = data['candidates'][0]['content']['parts'][0]['text']
-                        logger.debug(f"Gemini response text: {text[:100]}...")
-                        return text
+                        
+                        # Применяем постобработку для удаления звездочек
+                        cleaned_text = self._post_process_text(text)
+                        
+                        logger.debug(f"Gemini response text (cleaned): {cleaned_text[:100]}...")
+                        return cleaned_text
                     
                     logger.warning(f"Unexpected Gemini response: {data}")
                     return None

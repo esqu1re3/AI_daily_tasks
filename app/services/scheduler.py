@@ -139,17 +139,13 @@ def generate_and_send_summary(users):
 - Кратко и структурированно
 - Выдели основные направления работы
 - Укажи кто чем занимается (только тех, кто ответил)
-- В конце обязательно укажи кто не ответил на утренний вопрос, если такие есть
 - Общий объем текста на каждого сотрудника до 70 слов
 - НЕ используй звездочки для выделения текста
 - НЕ указывай дату в ответе
 - Используй простое форматирование без специальных символов
 
-Информация о неответивших:
-{f"Не ответили: {', '.join(not_responded_users)}" if not_responded_users else "Все сотрудники предоставили свои планы"}
-
 Ответ должен быть в формате краткого отчета для руководителя.
-В конце отчета обязательно укажи статус ответов.
+В конце отчета обязательно укажи статус ответов: {f"Не ответили: {', '.join(not_responded_users)}" if not_responded_users else "Все сотрудники предоставили свои планы"}.
 """
         
         # Генерируем сводку через Gemini
@@ -232,8 +228,25 @@ def process_user_response(user, response_text):
             username_display = f"@{db_user.username}" if db_user.username else f"ID:{db_user.user_id}"
             logger.info(f"Обновлен ответ пользователя {username_display}")
             
-            # Примечание: убираем досрочную проверку всех ответов, 
-            # так как теперь ждем фиксированные 5 минут
+            # Проверяем, ответили ли все активные пользователи (досрочная отправка)
+            active_users = db.query(User).filter(User.is_active == True).all()
+            responded_users = [u for u in active_users if u.has_responded_today]
+            
+            if len(responded_users) == len(active_users) and len(active_users) > 0:
+                logger.info(f"Все пользователи ответили досрочно ({len(responded_users)}/{len(active_users)}). Генерируем сводку немедленно.")
+                
+                # Отменяем запланированную задачу через 5 минут
+                try:
+                    if scheduler.get_job('summary_after_5min'):
+                        scheduler.remove_job('summary_after_5min')
+                        logger.info("Отменена запланированная задача генерации сводки через 5 минут")
+                except Exception as e:
+                    logger.warning(f"Не удалось отменить запланированную задачу: {e}")
+                
+                # Генерируем сводку немедленно
+                generate_and_send_summary(active_users)
+            else:
+                logger.info(f"Ответили {len(responded_users)}/{len(active_users)} пользователей. Ждем остальных или истечения времени.")
             
         else:
             logger.warning(f"Пользователь с user_id {user.id} не найден в базе")
@@ -263,7 +276,7 @@ def start_scheduler():
             send_morning_questions,
             'cron',
             hour=19,  # 9:00 по Бишкеку
-            minute=34,
+            minute=53,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
