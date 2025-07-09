@@ -36,8 +36,7 @@ def send_morning_questions():
         
         # Получаем активных пользователей
         active_users = db.query(User).filter(
-            User.is_active == True,
-            User.telegram_id.isnot(None)
+            User.is_active == True
         ).all()
         
         if not active_users:
@@ -50,13 +49,15 @@ def send_morning_questions():
         for user in active_users:
             try:
                 bot.send_message(
-                    chat_id=int(user.telegram_id),
+                    chat_id=int(user.user_id),
                     text=question
                 )
                 success_count += 1
-                logger.info(f"Утреннее сообщение отправлено пользователю @{user.username}")
+                username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
+                logger.info(f"Утреннее сообщение отправлено пользователю {username_display}")
             except Exception as e:
-                logger.error(f"Ошибка отправки утреннего сообщения пользователю @{user.username}: {e}")
+                username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
+                logger.error(f"Ошибка отправки утреннего сообщения пользователю {username_display}: {e}")
         
         logger.info(f"Утренняя рассылка завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
         
@@ -79,8 +80,7 @@ def check_responses_and_generate_summary():
     try:
         # Получаем активных пользователей
         active_users = db.query(User).filter(
-            User.is_active == True,
-            User.telegram_id.isnot(None)
+            User.is_active == True
         ).all()
         
         if not active_users:
@@ -130,10 +130,11 @@ def generate_and_send_summary(users):
         # Собираем все ответы
         responses = []
         for user in users:
+            username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
             if user.has_responded_today and user.last_response:
-                responses.append(f"@{user.username}: {user.last_response}")
+                responses.append(f"{username_display}: {user.last_response}")
             else:
-                responses.append(f"@{user.username}: Не ответил")
+                responses.append(f"{username_display}: Не ответил")
         
         if not responses:
             logger.info("Нет ответов для создания сводки")
@@ -152,6 +153,9 @@ def generate_and_send_summary(users):
 - Укажи кто чем занимается
 - Отметь если кто-то не ответил
 - Общий объем текста до 500 слов
+- НЕ используй звездочки для выделения текста
+- НЕ указывай дату в ответе
+- Используй простое форматирование без специальных символов
 
 Ответ должен быть в формате краткого отчета для руководителя.
 """
@@ -176,8 +180,8 @@ def generate_and_send_summary(users):
             summary = "⚠️ Не удалось сгенерировать сводку через Gemini. Используется базовый отчет:\n\n" + "\n".join(responses)
         
         # Формируем финальное сообщение для админа
-        final_message = f"📊 **Утренняя сводка планов команды**\n"
-        final_message += f"📅 Дата: {datetime.now().strftime('%Y-%m-%d')}\n"
+        final_message = f"📊 Утренняя сводка планов команды\n"
+        final_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
         final_message += f"👥 Участников: {len(users)}\n\n"
         final_message += summary
         
@@ -207,24 +211,28 @@ def process_user_response(user, response_text):
     db = SessionLocal()
     try:
         # Обновляем информацию о пользователе
-        db_user = db.query(User).filter(User.telegram_id == str(user.id)).first()
+        db_user = db.query(User).filter(User.user_id == str(user.id)).first()
         if db_user:
             db_user.has_responded_today = True
             db_user.last_response = response_text
             
-            # Обновляем полное имя если его нет
+            # Обновляем username и полное имя если их нет
+            if user.username and not db_user.username:
+                db_user.username = user.username
+            
             if not db_user.full_name and user.first_name:
                 full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
                 db_user.full_name = full_name
             
             db.commit()
-            logger.info(f"Обновлен ответ пользователя @{db_user.username}")
+            username_display = f"@{db_user.username}" if db_user.username else f"ID:{db_user.user_id}"
+            logger.info(f"Обновлен ответ пользователя {username_display}")
             
             # Проверяем, не ответили ли все пользователи
             check_if_all_responded()
             
         else:
-            logger.warning(f"Пользователь с telegram_id {user.id} не найден в базе")
+            logger.warning(f"Пользователь с user_id {user.id} не найден в базе")
             
     except Exception as e:
         logger.error(f"Ошибка обработки ответа пользователя: {e}")
@@ -236,8 +244,7 @@ def check_if_all_responded():
     db = SessionLocal()
     try:
         active_users = db.query(User).filter(
-            User.is_active == True,
-            User.telegram_id.isnot(None)
+            User.is_active == True
         ).all()
         
         responded_users = [user for user in active_users if user.has_responded_today]
@@ -277,7 +284,7 @@ def start_scheduler():
             send_morning_questions,
             'cron',
             hour=18,  # 17:57 по Бишкеку
-            minute=15,
+            minute=43,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )

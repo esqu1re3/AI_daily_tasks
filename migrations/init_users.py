@@ -29,8 +29,8 @@ def create_new_users_table():
         cursor.execute("""
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            telegram_id TEXT UNIQUE,
+            user_id TEXT UNIQUE NOT NULL,
+            username TEXT,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,

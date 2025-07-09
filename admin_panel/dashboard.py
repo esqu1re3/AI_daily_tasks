@@ -29,8 +29,8 @@ def init_database():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            telegram_id TEXT UNIQUE,
+            user_id TEXT UNIQUE NOT NULL,
+            username TEXT,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,
@@ -57,28 +57,34 @@ def load_users():
         logger.error(f"Ошибка загрузки пользователей: {e}")
         return pd.DataFrame()
 
-def add_user(username):
+def add_user(user_id):
     """Добавление нового пользователя"""
     try:
-        # Убираем @ если есть
-        username = username.replace('@', '').strip()
+        # Убираем лишние символы и проверяем что это число
+        user_id = str(user_id).strip()
         
-        if not username:
-            return False, "Имя пользователя не может быть пустым"
+        if not user_id:
+            return False, "User ID не может быть пустым"
+        
+        # Проверяем что это число
+        try:
+            int(user_id)
+        except ValueError:
+            return False, "User ID должен быть числом"
         
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
         
         cursor.execute(
-            "INSERT INTO users (username, is_active) VALUES (?, 1)",
-            (username,)
+            "INSERT INTO users (user_id, is_active) VALUES (?, 1)",
+            (user_id,)
         )
         
         conn.commit()
         conn.close()
-        return True, f"Пользователь @{username} успешно добавлен"
+        return True, f"Пользователь с ID {user_id} успешно добавлен"
     except sqlite3.IntegrityError:
-        return False, "Пользователь с таким именем уже существует"
+        return False, "Пользователь с таким ID уже существует"
     except Exception as e:
         logger.error(f"Ошибка добавления пользователя: {e}")
         return False, f"Ошибка: {str(e)}"
@@ -176,15 +182,16 @@ with tab1:
                 
                 with col1:
                     status_icon = "✅" if user['is_active'] else "❌"
-                    st.write(f"{status_icon} **@{user['username']}**")
+                    st.write(f"{status_icon} **ID: {user['user_id']}**")
+                    if user['username']:
+                        st.caption(f"@{user['username']}")
                     if user['full_name']:
                         st.caption(f"👤 {user['full_name']}")
                 
                 with col2:
-                    if user['telegram_id']:
-                        st.write(f"📱 {user['telegram_id']}")
-                    else:
-                        st.write("📱 Не подключен")
+                    st.write(f"📱 ID: {user['user_id']}")
+                    if user['username']:
+                        st.write(f"👤 @{user['username']}")
                 
                 with col3:
                     response_icon = "✅" if user['has_responded_today'] else "⏳"
@@ -217,25 +224,25 @@ with tab2:
     st.subheader("➕ Добавить пользователя")
     
     with st.form("add_user_form"):
-        st.write("Введите @username пользователя Telegram")
-        username_input = st.text_input(
-            "Username", 
-            placeholder="test_user или @test_user",
-            help="Можно вводить с @ или без"
+        st.write("Введите User ID пользователя Telegram")
+        user_id_input = st.text_input(
+            "User ID", 
+            placeholder="123456789 или 987654321",
+            help="Введите User ID пользователя Telegram"
         )
         
         submitted = st.form_submit_button("Добавить пользователя", type="primary")
         
         if submitted:
-            if username_input:
-                success, message = add_user(username_input)
+            if user_id_input:
+                success, message = add_user(user_id_input)
                 if success:
                     st.success(message)
                     st.rerun()
                 else:
                     st.error(message)
             else:
-                st.error("Введите имя пользователя!")
+                st.error("Введите User ID пользователя!")
 
 with tab3:
     st.subheader("📊 Статистика")
@@ -252,8 +259,8 @@ with tab3:
             st.metric("Активных", active_users)
         
         with col3:
-            connected_users = len(users_df[users_df['telegram_id'].notna()])
-            st.metric("Подключены к боту", connected_users)
+            users_with_username = len(users_df[users_df['username'].notna()])
+            st.metric("С username", users_with_username)
         
         with col4:
             responded_today = len(users_df[users_df['has_responded_today'] == 1])
@@ -274,11 +281,15 @@ with st.sidebar:
     st.write("""
     **Как это работает:**
     
-    1. 👤 Добавьте пользователей по @username
-    2. 🤖 Бот отправит им сообщение в 9:00 (UTC+6)
+    1. 👤 Добавьте пользователей по User ID
+    2. 🤖 Бот отправит им сообщение в 17:57 (Бишкек)
     3. ⏳ Ждет ответов от всех пользователей
     4. 🧠 Gemini создает сводку планов
     5. 📬 Админ получает общий отчет
+    
+    **Как получить User ID:**
+    - Напишите @userinfobot в Telegram
+    - Или попросите пользователя переслать сообщение боту @JsonDumpBot
     """)
     
     st.divider()

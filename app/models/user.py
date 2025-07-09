@@ -8,8 +8,8 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False)  # @username без @
-    telegram_id = Column(String, unique=True, nullable=True)  # заполняется после первого сообщения
+    user_id = Column(String, unique=True, nullable=False)  # Telegram User ID
+    username = Column(String, nullable=True)  # @username (может быть пустым)
     full_name = Column(String, nullable=True)  # заполняется автоматически при первом сообщении
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
