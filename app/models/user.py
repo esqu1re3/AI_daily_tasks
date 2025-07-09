@@ -1,16 +1,17 @@
 # Модель пользователя (сотрудника)
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
+from datetime import datetime
 from app.core.database import Base
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(String, unique=True, nullable=False)
-    username = Column(String)
-    full_name = Column(String, nullable=False)
-    created_at = Column(DateTime, server_default='CURRENT_TIMESTAMP')
+    username = Column(String, unique=True, nullable=False)  # @username без @
+    telegram_id = Column(String, unique=True, nullable=True)  # заполняется после первого сообщения
+    full_name = Column(String, nullable=True)  # заполняется автоматически при первом сообщении
+    created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
-
-    messages = relationship("Message", back_populates="user")
+    last_response = Column(String, nullable=True)  # последний ответ на утренний вопрос
+    has_responded_today = Column(Boolean, default=False)  # ответил ли сегодня

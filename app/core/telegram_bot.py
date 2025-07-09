@@ -6,8 +6,6 @@ from telebot.handler_backends import ContinueHandling
 from app.config import settings
 from app.services.gemini_service import GeminiService
 from app.services.bot_service import BotService
-from app.core.database import SessionLocal
-from app.models.user import User
 
 # Настройка логирования
 logging.basicConfig(
@@ -31,22 +29,14 @@ class TelegramBot:
             try:
                 user = message.from_user
                 logger.info(f"Start command from user {user.id} (@{user.username})")
-                # Регистрируем пользователя в базе данных
-                with SessionLocal() as db:
-                    if not db.query(User).filter(User.telegram_id == str(user.id)).first():
-                        new_user = User(
-                            telegram_id=str(user.id),
-                            username=user.username or "",
-                            full_name=f"{user.first_name or ''} {user.last_name or ''}".strip()
-                        )
-                        db.add(new_user)
-                        db.commit()
-                        logger.info(f"New user registered: {user.id}")
-
+                
                 self.bot.reply_to(
                     message,
-                    "👋 Привет! Я твой помощник для рабочих задач.\n\n"
-                    "Я помогу с отчетами, задачами и вопросами по проектам."
+                    "👋 Привет! Я бот для сбора утренних планов команды.\n\n"
+                    "🔹 Если вы добавлены администратором в систему, "
+                    "я буду спрашивать у вас планы на день каждое утро в 9:00.\n\n"
+                    "🔹 Просто отвечайте на мои утренние сообщения своими планами на день.\n\n"
+                    "❓ Если у вас нет доступа, обратитесь к администратору."
                 )
             except Exception as e:
                 logger.error(f"Error in start command: {e}")

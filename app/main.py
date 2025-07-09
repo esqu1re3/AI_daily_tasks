@@ -15,15 +15,15 @@ logging.basicConfig(
 )
 from app.core.database import engine
 from app.models import base
-from app.api.endpoints import users, reports, admin
+from app.api.endpoints import users
 
+# Глобальная переменная для предотвращения повторной инициализации
+_services_initialized = False
 
 app = FastAPI(title="AI Daily Tasks API")
 
 # Роуты
 app.include_router(users.router, prefix="/users", tags=["Users"])
-app.include_router(reports.router, prefix="/reports", tags=["Reports"])
-app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 
 # --- Базовый эндпоинт
@@ -43,20 +43,35 @@ def _run_telegram_bot():
 
 def _init_background_services():
     """Создание БД, запуск планировщика и бота"""
+    global _services_initialized
+    
+    if _services_initialized:
+        logging.info("Сервисы уже инициализированы, пропускаем")
+        return
+    
     import os
 
     # Не запускать бота в процессе-ребутере uvicorn
     if os.environ.get("RUN_MAIN") == "true" or os.environ.get("UVICORN_RELOAD_PROCESS") == "true":
         return
 
-    # Создание таблиц при первом запуске
-    base.Base.metadata.create_all(bind=engine)
+    try:
+        # Создание таблиц при первом запуске
+        base.Base.metadata.create_all(bind=engine)
+        logging.info("✅ База данных инициализирована")
 
-    # Планировщик
-    start_scheduler()
+        # Планировщик
+        start_scheduler()
 
-    # Telegram-бот
-    threading.Thread(target=_run_telegram_bot, daemon=True).start()
+        # Telegram-бот
+        threading.Thread(target=_run_telegram_bot, daemon=True).start()
+        logging.info("✅ Telegram бот запущен в отдельном потоке")
+        
+        _services_initialized = True
+        logging.info("✅ Все фоновые сервисы инициализированы")
+        
+    except Exception as e:
+        logging.error(f"❌ Ошибка инициализации сервисов: {e}")
 
 
 # --- События FastAPI -------------------------------------------------------
