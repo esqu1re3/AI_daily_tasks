@@ -129,29 +129,41 @@ def generate_and_send_summary(users):
     try:
         # Собираем все ответы
         responses = []
+        responded_users = []
+        not_responded_users = []
+        
         for user in users:
             username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
             if user.has_responded_today and user.last_response:
                 responses.append(f"{username_display}: {user.last_response}")
+                responded_users.append(username_display)
             else:
                 responses.append(f"{username_display}: Не ответил")
+                not_responded_users.append(username_display)
         
         if not responses:
             logger.info("Нет ответов для создания сводки")
             return
+        
+        # Формируем дополнительную информацию о статусе ответов
+        status_info = ""
+        if not_responded_users:
+            status_info = f"\n\nСтатус ответов: {len(responded_users)} из {len(users)} сотрудников ответили. Не ответили: {', '.join(not_responded_users)}"
+        else:
+            status_info = f"\n\nСтатус ответов: Все {len(users)} сотрудников предоставили свои планы."
         
         # Формируем промпт для Gemini
         prompt = f"""
 Создай краткую сводку планируемых работ команды на сегодня.
 
 Ответы сотрудников:
-{chr(10).join(responses)}
+{chr(10).join(responses)}{status_info}
 
 Требования к сводке:
 - Кратко и структурированно
 - Выдели основные направления работы
 - Укажи кто чем занимается
-- Отметь если кто-то не ответил
+- Упомяни о неответивших ТОЛЬКО если они есть в статусе ответов
 - Общий объем текста до 500 слов
 - НЕ используй звездочки для выделения текста
 - НЕ указывай дату в ответе
@@ -283,8 +295,8 @@ def start_scheduler():
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=18,  # 17:57 по Бишкеку
-            minute=43,
+            hour=19,  # 17:57 по Бишкеку
+            minute=6,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
