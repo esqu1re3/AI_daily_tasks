@@ -3,7 +3,7 @@ import time
 import threading
 from telebot import TeleBot, types
 from telebot.handler_backends import ContinueHandling
-from app.config import settings
+from app.config import get_settings
 from app.services.gemini_service import GeminiService
 from app.services.bot_service import BotService
 
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class TelegramBot:
     def __init__(self):
+        settings = get_settings()
         self.bot = TeleBot(settings.TG_BOT_TOKEN, threaded=True)
         self.gemini_service = GeminiService()
         self.bot_service = BotService(self.gemini_service)

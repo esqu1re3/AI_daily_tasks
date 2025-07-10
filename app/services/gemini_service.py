@@ -41,13 +41,16 @@ import aiohttp
 import logging
 import traceback
 from tenacity import retry, stop_after_attempt, wait_exponential
-from app.config import settings
+from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 class GeminiService:
     def __init__(self):
         logger.debug("Initializing GeminiService")
-        self.api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        settings = get_settings()
+        self.api_url = (
+            f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        )
 
     def _post_process_text(self, text: str) -> str:
         """Постобработка текста от Gemini: удаление звездочек и очистка форматирования"""

@@ -3,6 +3,7 @@
 
 from pydantic_settings import BaseSettings
 from pydantic import Field
+from functools import lru_cache
 
 class Settings(BaseSettings):
     # Обязательные переменные (без значений по умолчанию)
@@ -19,4 +20,9 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         extra = "ignore"  # Игнорировать лишние переменные в .env
 
-settings = Settings()
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Return cached application settings."""
+    return Settings()
+
