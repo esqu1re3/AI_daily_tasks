@@ -75,15 +75,22 @@ class BotService:
             process_user_response(message.from_user, text)
             
             # Отправляем подтверждение
-            username_display = f"@{db_user.username}" if db_user.username else f"ID:{db_user.user_id}"
+            # Используем full_name для отображения, если есть
+            if db_user.full_name:
+                user_display = db_user.full_name
+            elif db_user.username:
+                user_display = f"@{db_user.username}"
+            else:
+                user_display = f"ID:{db_user.user_id}"
+                
             bot.reply_to(
                 message,
-                f"✅ Спасибо, {username_display}! Ваш план принят.\n\n"
+                f"✅ Спасибо, {user_display}! Ваш план принят.\n\n"
                 "📝 Когда все участники команды ответят, "
                 "администратор получит общую сводку планов."
             )
             
-            logger.info(f"План пользователя {username_display} сохранен: {text[:100]}...")
+            logger.info(f"План пользователя {user_display} сохранен: {text[:100]}...")
             
         except Exception as e:
             logger.error(f"Ошибка обработки плана: {e}")

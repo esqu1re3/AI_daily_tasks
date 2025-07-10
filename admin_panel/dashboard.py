@@ -146,7 +146,7 @@ if not init_database():
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ======================
 st.title("👥 AI Daily Tasks — Управление пользователями")
-st.caption("Добавляйте пользователей по @username для получения утренних планов")
+st.caption("Добавляйте пользователей по User ID для получения утренних планов")
 
 # Разделяем на вкладки
 tab1, tab2, tab3 = st.tabs(["👤 Пользователи", "➕ Добавить", "📊 Статистика"])
@@ -223,8 +223,37 @@ with tab1:
 with tab2:
     st.subheader("➕ Добавить пользователя")
     
-    with st.form("add_user_form"):
+    # Инициализация session state для уведомлений и управления формой
+    if 'success_message' not in st.session_state:
+        st.session_state.success_message = None
+    if 'error_message' not in st.session_state:
+        st.session_state.error_message = None
+    if 'form_key' not in st.session_state:
+        st.session_state.form_key = 0
+    
+    # Показываем уведомления если есть
+    if st.session_state.success_message:
+        success_col1, success_col2 = st.columns([4, 1])
+        with success_col1:
+            st.success(st.session_state.success_message)
+        with success_col2:
+            if st.button("✕", key="close_success", help="Закрыть уведомление"):
+                st.session_state.success_message = None
+                st.rerun()
+    
+    if st.session_state.error_message:
+        error_col1, error_col2 = st.columns([4, 1])
+        with error_col1:
+            st.error(st.session_state.error_message)
+        with error_col2:
+            if st.button("✕", key="close_error", help="Закрыть уведомление"):
+                st.session_state.error_message = None
+                st.rerun()
+    
+    # Используем динамический ключ для формы, чтобы очистить поля после успешного добавления
+    with st.form(key=f"add_user_form_{st.session_state.form_key}"):
         st.write("Введите User ID пользователя Telegram")
+        
         user_id_input = st.text_input(
             "User ID", 
             placeholder="123456789 или 987654321",
@@ -234,15 +263,23 @@ with tab2:
         submitted = st.form_submit_button("Добавить пользователя", type="primary")
         
         if submitted:
-            if user_id_input:
-                success, message = add_user(user_id_input)
+            if user_id_input.strip():
+                success, message = add_user(user_id_input.strip())
                 if success:
-                    st.success(message)
+                    # Сохраняем сообщение об успехе и увеличиваем ключ формы для очистки
+                    st.session_state.success_message = message
+                    st.session_state.error_message = None
+                    st.session_state.form_key += 1  # Это приведет к очистке формы
                     st.rerun()
                 else:
-                    st.error(message)
+                    # Сохраняем сообщение об ошибке
+                    st.session_state.error_message = message
+                    st.session_state.success_message = None
+                    st.rerun()
             else:
-                st.error("Введите User ID пользователя!")
+                st.session_state.error_message = "Введите User ID пользователя!"
+                st.session_state.success_message = None
+                st.rerun()
 
 with tab3:
     st.subheader("📊 Статистика")

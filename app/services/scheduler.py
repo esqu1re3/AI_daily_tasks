@@ -117,12 +117,19 @@ def generate_and_send_summary(users):
         not_responded_users = []
         
         for user in users:
-            username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
-            if user.has_responded_today and user.last_response:
-                responses.append(f"{username_display}: {user.last_response}")
-                responded_users.append(username_display)
+            # Используем full_name, если есть, иначе username, иначе ID
+            if user.full_name:
+                user_display = user.full_name
+            elif user.username:
+                user_display = f"@{user.username}"
             else:
-                not_responded_users.append(username_display)
+                user_display = f"ID:{user.user_id}"
+                
+            if user.has_responded_today and user.last_response:
+                responses.append(f"{user_display}: {user.last_response}")
+                responded_users.append(user_display)
+            else:
+                not_responded_users.append(user_display)
         
         if not responses and not not_responded_users:
             logger.info("Нет пользователей для создания сводки")
@@ -216,17 +223,25 @@ def process_user_response(user, response_text):
             db_user.has_responded_today = True
             db_user.last_response = response_text
             
-            # Обновляем username и полное имя если их нет
-            if user.username and not db_user.username:
+            # Обновляем username и полное имя
+            if user.username:
                 db_user.username = user.username
             
-            if not db_user.full_name and user.first_name:
+            if user.first_name:
                 full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
                 db_user.full_name = full_name
             
             db.commit()
-            username_display = f"@{db_user.username}" if db_user.username else f"ID:{db_user.user_id}"
-            logger.info(f"Обновлен ответ пользователя {username_display}")
+            
+            # Используем full_name для отображения, если есть
+            if db_user.full_name:
+                user_display = db_user.full_name
+            elif db_user.username:
+                user_display = f"@{db_user.username}"
+            else:
+                user_display = f"ID:{db_user.user_id}"
+            
+            logger.info(f"Обновлен ответ пользователя {user_display}")
             
             # Проверяем, ответили ли все активные пользователи (досрочная отправка)
             active_users = db.query(User).filter(User.is_active == True).all()
@@ -275,8 +290,8 @@ def start_scheduler():
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=19,  # 9:00 по Бишкеку
-            minute=53,
+            hour=9,  # 9:00 по Бишкеку
+            minute=0,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
