@@ -35,12 +35,17 @@ def create_empty_users_table():
             is_active BOOLEAN DEFAULT 1,
             is_verified BOOLEAN DEFAULT 0,
             last_response TEXT,
-            has_responded_today BOOLEAN DEFAULT 0
+            has_responded_today BOOLEAN DEFAULT 0,
+            activation_token TEXT
         )
         """)
+        
+        # Добавляем индекс для уникальности activation_token
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_activation_token ON users(activation_token) WHERE activation_token IS NOT NULL")
+        
         conn.commit()
         conn.close()
-        logger.info("✅ Пустая таблица users создана с актуальной структурой")
+        logger.info("✅ Пустая таблица users создана с актуальной структурой (включая activation_token)")
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка создания таблицы users: {e}")
@@ -54,9 +59,10 @@ def main():
         if create_empty_users_table():
             print("\n✅ База данных сброшена и готова к использованию!")
             print("\n📝 Структура таблицы users обновлена:")
-            print("   - user_id: nullable (заполняется при верификации)")
+            print("   - user_id: nullable (заполняется при активации)")
             print("   - username: уникальный и обязательный")
-            print("   - is_verified: новое поле для отслеживания верификации")
+            print("   - is_verified: поле для отслеживания активации")
+            print("   - activation_token: токен для активации через диплинки")
         else:
             print("❌ Ошибка при создании новой таблицы users.")
     else:
