@@ -45,7 +45,6 @@ cp docker.env.example .env
 GEMINI_API_KEY=your_actual_gemini_api_key
 TG_BOT_TOKEN=your_actual_telegram_bot_token
 ADMIN_ID=your_actual_telegram_user_id
-GEMINI_MODEL=gemini-2.5-flash
 ```
 
 #### 2. Запустите через Docker Compose
@@ -285,10 +284,6 @@ https://t.me/aidailytasksBot?start=group_activation
 GEMINI_API_KEY=AIzaSyC-1234567890abcdef
 TG_BOT_TOKEN=1234567890:ABCDEFghijklmnopqrstuvwxyz
 ADMIN_ID=123456789
-
-# Опциональные параметры
-GEMINI_MODEL=gemini-2.5-flash
-DATABASE_URL=sqlite:///./data/reports_backup.sqlite
 ```
 
 ## 📝 Лицензия

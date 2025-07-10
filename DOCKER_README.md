@@ -16,7 +16,6 @@ cp docker.env.example .env
 GEMINI_API_KEY=your_actual_gemini_api_key
 TG_BOT_TOKEN=your_actual_telegram_bot_token
 ADMIN_ID=your_actual_telegram_user_id
-GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ### 2. Запуск через Docker Compose
