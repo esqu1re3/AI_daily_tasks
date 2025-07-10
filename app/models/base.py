@@ -6,3 +6,4 @@ from app.models.user import User
 # все модели были зарегистрированы и таблицы были созданы.
 
 __all__ = ["Base", "User"]
+

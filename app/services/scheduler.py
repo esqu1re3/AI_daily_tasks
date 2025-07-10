@@ -339,3 +339,4 @@ def stop_scheduler():
 
 # Экспортируем функцию для обработки ответов пользователей
 __all__ = ['start_scheduler', 'stop_scheduler', 'process_user_response']
+
