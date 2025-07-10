@@ -7,29 +7,8 @@ import os
 import sys
 import subprocess
 import argparse
-from pathlib import Path
+from utils.startup_checks import check_env_file, check_database
 
-def check_env_file():
-    """Проверка наличия файла .env"""
-    env_path = Path(".env")
-    if not env_path.exists():
-        print("❌ Файл .env не найден!")
-        print("\n📝 Создайте файл .env со следующими переменными:")
-        print("GEMINI_API_KEY=your_gemini_api_key_here")
-        print("TG_BOT_TOKEN=your_telegram_bot_token_here")
-        print("ADMIN_ID=your_telegram_user_id_here")
-        return False
-    return True
-
-def check_database():
-    """Проверка наличия базы данных"""
-    db_path = Path("data/reports_backup.sqlite")
-    if not db_path.exists():
-        print("❌ База данных не найдена!")
-        print("\n🔧 Запустите инициализацию:")
-        print("python migrations/init_users.py")
-        return False
-    return True
 
 def run_migration():
     """Запуск миграции базы данных"""

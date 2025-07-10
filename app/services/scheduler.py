@@ -5,12 +5,14 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.config import settings
+from app.config import get_settings
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.services.gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
+
+settings = get_settings()
 
 # Создаем экземпляр бота и сервисов
 bot = telebot.TeleBot(settings.TG_BOT_TOKEN)
@@ -70,7 +72,7 @@ def send_morning_questions():
             generate_summary_after_timeout,
             'date',
             run_date=summary_time,
-            id='summary_after_5min'
+            id='summary_after_1hour'
         )
         
         logger.info(f"Сводка будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 1 час)")
@@ -81,7 +83,7 @@ def send_morning_questions():
         db.close()
 
 def generate_summary_after_timeout():
-    """Генерация сводки через 5 минут после отправки утренних сообщений"""
+    """Генерация сводки через 1 час после отправки утренних сообщений"""
     db = SessionLocal()
     try:
         # Получаем активных активированных участников команды
@@ -270,11 +272,11 @@ def process_user_response(user, response_text):
             if len(responded_users) == len(active_users) and len(active_users) > 0:
                 logger.info(f"Все участники ответили досрочно ({len(responded_users)}/{len(active_users)}). Генерируем сводку немедленно.")
                 
-                # Отменяем запланированную задачу через 5 минут
+                # Отменяем запланированную задачу через 1 час
                 try:
-                    if scheduler.get_job('summary_after_5min'):
-                        scheduler.remove_job('summary_after_5min')
-                        logger.info("Отменена запланированная задача генерации сводки через 5 минут")
+                    if scheduler.get_job('summary_after_1hour'):
+                        scheduler.remove_job('summary_after_1hour')
+                        logger.info("Отменена запланированная задача генерации сводки через 1 час")
                 except Exception as e:
                     logger.warning(f"Не удалось отменить запланированную задачу: {e}")
                 

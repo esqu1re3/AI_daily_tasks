@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 import logging
-from app.config import settings
+from app.config import get_settings
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
@@ -20,6 +20,7 @@ def get_bot_username():
     """Получение username бота из API"""
     try:
         import telebot
+        settings = get_settings()
         bot = telebot.TeleBot(settings.TG_BOT_TOKEN)
         bot_info = bot.get_me()
         return bot_info.username
