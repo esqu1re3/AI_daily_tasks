@@ -5,12 +5,14 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.config import settings
+from app.config import get_settings
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.services.gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
+
+settings = get_settings()
 
 # Создаем экземпляр бота и сервисов
 bot = telebot.TeleBot(settings.TG_BOT_TOKEN)

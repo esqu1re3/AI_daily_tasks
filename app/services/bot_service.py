@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
 from typing import Optional
-from app.config import settings
 from app.core.database import SessionLocal
 from app.models.user import User
 
