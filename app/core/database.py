@@ -6,9 +6,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Берём строку подключения из глобальных настроек приложения
-from app.config import settings
+from app.config import get_settings
 
 # Если нужно, создаём директорию для файла базы данных
+settings = get_settings()
 db_url = settings.DATABASE_URL
 if db_url.startswith("sqlite"):
     # Извлекаем путь к файлу (после последнего '/')
