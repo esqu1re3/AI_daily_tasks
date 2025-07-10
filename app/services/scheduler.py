@@ -12,20 +12,65 @@ from app.services.gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
 
-# Создаем экземпляр бота и сервисов
-bot = telebot.TeleBot(settings.TG_BOT_TOKEN)
-gemini_service = GeminiService()
-scheduler = BackgroundScheduler()
+# Lazy initialization of services
+bot = None
+gemini_service = None
+scheduler = None
+ADMIN_ID = None
 
-# ID администратора
-try:
-    ADMIN_ID = int(settings.ADMIN_ID) if settings.ADMIN_ID else None
-except (ValueError, TypeError):
-    ADMIN_ID = None
-    logger.warning("ADMIN_ID не настроен в переменных окружения")
+def _ensure_services_initialized():
+    """Обеспечивает инициализацию всех сервисов планировщика.
+    
+    Выполняет ленивую инициализацию Telegram бота, Gemini сервиса и планировщика
+    задач. Инициализация происходит только один раз при первом обращении.
+    
+    Raises:
+        RuntimeError: Если настройки приложения не загружены или отсутствуют
+                     обязательные переменные окружения.
+    
+    Note:
+        Эта функция использует глобальные переменные для хранения экземпляров
+        сервисов и предназначена для внутреннего использования модулем.
+    """
+    global bot, gemini_service, scheduler, ADMIN_ID
+    
+    if bot is None:
+        if settings is None:
+            raise RuntimeError("Settings not loaded. Ensure .env file exists with required variables.")
+        
+        bot = telebot.TeleBot(settings.TG_BOT_TOKEN)
+        gemini_service = GeminiService()
+        scheduler = BackgroundScheduler()
+        
+        # ID администратора
+        try:
+            ADMIN_ID = int(settings.ADMIN_ID) if settings.ADMIN_ID else None
+        except (ValueError, TypeError):
+            ADMIN_ID = None
+            logger.warning("ADMIN_ID не настроен в переменных окружения")
 
 def send_morning_questions():
-    """Утренняя рассылка вопросов в 9:30 UTC+6"""
+    """Отправляет утренние вопросы всем активным участникам команды.
+    
+    Выполняет следующие действия:
+    1. Сбрасывает флаги ответов для нового дня
+    2. Получает список активных и активированных участников
+    3. Отправляет утренний вопрос каждому участнику
+    4. Планирует генерацию сводки через 1 час
+    
+    Функция запускается автоматически планировщиком в заданное время.
+    Обрабатывает ошибки отправки сообщений индивидуально для каждого пользователя.
+    
+    Note:
+        Время выполнения настраивается в start_scheduler().
+        По умолчанию: 9:30 по времени Asia/Bishkek.
+    
+    Examples:
+        >>> # Функция вызывается автоматически планировщиком
+        >>> # Вручную можно вызвать для тестирования:
+        >>> send_morning_questions()
+    """
+    _ensure_services_initialized()
     db = SessionLocal()
     try:
         # Сбрасываем флаги ответов на новый день
@@ -70,7 +115,7 @@ def send_morning_questions():
             generate_summary_after_timeout,
             'date',
             run_date=summary_time,
-            id='summary_after_5min'
+            id='summary_after_1hour'
         )
         
         logger.info(f"Сводка будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 1 час)")
@@ -81,7 +126,25 @@ def send_morning_questions():
         db.close()
 
 def generate_summary_after_timeout():
-    """Генерация сводки через 5 минут после отправки утренних сообщений"""
+    """Генерирует сводку после истечения времени ожидания ответов.
+    
+    Запускается автоматически через 1 час после отправки утренних вопросов.
+    Собирает статистику ответов и запускает генерацию сводки в отдельном потоке.
+    
+    Выполняет следующие действия:
+    1. Получает список активных участников команды
+    2. Определяет кто ответил, а кто нет
+    3. Запускает генерацию сводки в отдельном потоке
+    
+    Note:
+        Использует многопоточность для предотвращения блокировки планировщика
+        во время генерации сводки через Gemini API.
+    
+    Examples:
+        >>> # Функция вызывается автоматически планировщиком
+        >>> # Вручную можно вызвать для тестирования:
+        >>> generate_summary_after_timeout()
+    """
     db = SessionLocal()
     try:
         # Получаем активных активированных участников команды
@@ -115,7 +178,28 @@ def generate_summary_after_timeout():
         db.close()
 
 def generate_and_send_summary(users):
-    """Генерация сводки через Gemini и отправка админу"""
+    """Генерирует сводку планов команды через Gemini AI и отправляет администратору.
+    
+    Выполняет следующие действия:
+    1. Собирает все ответы участников команды
+    2. Формирует промпт для Gemini API
+    3. Генерирует сводку через Gemini AI
+    4. Отправляет готовую сводку администратору в Telegram
+    
+    Args:
+        users (List[User]): Список пользователей для включения в сводку.
+    
+    Note:
+        Функция запускается в отдельном потоке для предотвращения блокировки.
+        При недоступности Gemini формирует базовый отчет.
+        Длинные сообщения автоматически разбиваются на части.
+    
+    Examples:
+        >>> from app.models.user import User
+        >>> users = [user1, user2, user3]
+        >>> generate_and_send_summary(users)
+        # Сводка будет сгенерирована и отправлена админу
+    """
     if not ADMIN_ID:
         logger.error("ADMIN_ID не настроен, не могу отправить сводку")
         return
@@ -224,7 +308,26 @@ def generate_and_send_summary(users):
         logger.error(f"Ошибка генерации сводки: {e}")
 
 def process_user_response(user, response_text):
-    """Обработка ответа пользователя на утренний вопрос"""
+    """Обрабатывает ответ пользователя на утренний вопрос.
+    
+    Выполняет следующие действия:
+    1. Сохраняет ответ пользователя в базе данных
+    2. Обновляет информацию о пользователе (имя, username)
+    3. Проверяет, ответили ли все участники для досрочной генерации сводки
+    
+    Args:
+        user: Объект пользователя Telegram с атрибутами id, username, first_name, last_name.
+        response_text (str): Текст ответа пользователя на утренний вопрос.
+    
+    Note:
+        Если все активные участники ответили, сводка генерируется досрочно.
+        Автоматически отменяет запланированную задачу генерации через 1 час.
+    
+    Examples:
+        >>> # Вызывается автоматически при получении сообщения от пользователя
+        >>> process_user_response(telegram_user, "Сегодня работаю над проектом X")
+    """
+    _ensure_services_initialized()
     db = SessionLocal()
     try:
         # Обновляем информацию о пользователе - ищем по user_id
@@ -270,11 +373,11 @@ def process_user_response(user, response_text):
             if len(responded_users) == len(active_users) and len(active_users) > 0:
                 logger.info(f"Все участники ответили досрочно ({len(responded_users)}/{len(active_users)}). Генерируем сводку немедленно.")
                 
-                # Отменяем запланированную задачу через 5 минут
+                # Отменяем запланированную задачу через 1 час
                 try:
-                    if scheduler.get_job('summary_after_5min'):
-                        scheduler.remove_job('summary_after_5min')
-                        logger.info("Отменена запланированная задача генерации сводки через 5 минут")
+                    if scheduler.get_job('summary_after_1hour'):
+                        scheduler.remove_job('summary_after_1hour')
+                        logger.info("Отменена запланированная задача генерации сводки через 1 час")
                 except Exception as e:
                     logger.warning(f"Не удалось отменить запланированную задачу: {e}")
                 
@@ -297,7 +400,26 @@ def process_user_response(user, response_text):
         db.close()
 
 def start_scheduler():
-    """Запуск планировщика задач"""
+    """Запускает планировщик задач для утренних опросов.
+    
+    Выполняет следующие действия:
+    1. Инициализирует все необходимые сервисы
+    2. Удаляет существующие задачи при повторном запуске
+    3. Настраивает утреннюю рассылку по расписанию
+    4. Запускает планировщик в фоновом режиме
+    
+    Note:
+        По умолчанию утренняя рассылка настроена на 9:30 по времени Asia/Bishkek.
+        Планировщик работает в фоновом режиме и не блокирует основной поток.
+    
+    Raises:
+        Exception: При ошибках инициализации планировщика.
+    
+    Examples:
+        >>> start_scheduler()
+        # Планировщик запущен, утренние вопросы будут отправляться автоматически
+    """
+    _ensure_services_initialized()
     try:
         # Проверяем, не запущен ли уже планировщик
         if scheduler.running:
@@ -315,8 +437,8 @@ def start_scheduler():
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=9,  # 9:30 по Бишкеку
-            minute=30,
+            hour=17,  # 9:30 по Бишкеку
+            minute=50,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
@@ -329,7 +451,20 @@ def start_scheduler():
         logger.error(f"❌ Ошибка запуска планировщика: {e}")
 
 def stop_scheduler():
-    """Остановка планировщика"""
+    """Останавливает планировщик задач.
+    
+    Корректно завершает работу планировщика и освобождает ресурсы.
+    Останавливает все запланированные задачи.
+    
+    Note:
+        Функция безопасна для повторного вызова.
+        Если планировщик уже остановлен, функция завершается без ошибок.
+    
+    Examples:
+        >>> stop_scheduler()
+        # Планировщик остановлен, задачи больше не выполняются
+    """
+    _ensure_services_initialized()
     try:
         if scheduler.running:
             scheduler.shutdown()

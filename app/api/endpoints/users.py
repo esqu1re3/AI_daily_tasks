@@ -17,7 +17,22 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 def get_bot_username():
-    """Получение username бота из API"""
+    """Получает username Telegram бота из API.
+    
+    Подключается к Telegram Bot API для получения информации о боте,
+    включая его username для формирования ссылок активации.
+    
+    Returns:
+        str: Username бота без символа @ или 'your_bot' при ошибке.
+    
+    Raises:
+        Exception: При ошибках подключения к Telegram API (обрабатывается внутри).
+    
+    Examples:
+        >>> username = get_bot_username()
+        >>> print(f"Bot username: @{username}")
+        Bot username: @aidailytasksBot
+    """
     try:
         import telebot
         bot = telebot.TeleBot(settings.TG_BOT_TOKEN)
@@ -29,7 +44,30 @@ def get_bot_username():
 
 @router.post("/", response_model=UserResponse, status_code=201)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    """Создание нового пользователя (пользователи создаются автоматически при активации)"""
+    """Создает нового пользователя в системе.
+    
+    Создает запись пользователя в базе данных. В обычном режиме работы
+    пользователи создаются автоматически при активации через ссылку.
+    Этот эндпоинт предназначен для административного управления.
+    
+    Args:
+        user (UserCreate): Данные для создания пользователя.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        UserResponse: Созданный пользователь с присвоенным ID.
+    
+    Raises:
+        HTTPException: 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # POST /users
+        >>> {
+        ...   "username": "john_doe",
+        ...   "full_name": "John Doe"
+        ... }
+        >>> # Response: UserResponse with id and other fields
+    """
     try:
         # Пользователи создаются автоматически при активации
         # Этот эндпоинт оставлен для совместимости
@@ -52,7 +90,29 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @router.get("/", response_model=List[UserResponse])
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Получение списка пользователей с пагинацией"""
+    """Получает список пользователей с пагинацией.
+    
+    Возвращает список всех пользователей системы с поддержкой пагинации
+    для эффективной работы с большими наборами данных.
+    
+    Args:
+        skip (int): Количество записей для пропуска (offset). По умолчанию 0.
+        limit (int): Максимальное количество записей для возврата. По умолчанию 100.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        List[UserResponse]: Список пользователей с их данными.
+    
+    Raises:
+        HTTPException: 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /users?skip=0&limit=10
+        >>> # Response: [UserResponse, UserResponse, ...]
+        
+        >>> # GET /users?skip=10&limit=5
+        >>> # Получить пользователей с 11 по 15
+    """
     try:
         users = db.query(User).offset(skip).limit(limit).all()
         return users
@@ -62,7 +122,25 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 
 @router.get("/{user_id}", response_model=UserResponse)
 def read_user(user_id: int, db: Session = Depends(get_db)):
-    """Получение пользователя по ID"""
+    """Получает пользователя по его ID.
+    
+    Возвращает детальную информацию о конкретном пользователе
+    по его уникальному идентификатору в базе данных.
+    
+    Args:
+        user_id (int): Уникальный идентификатор пользователя в базе данных.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        UserResponse: Данные пользователя.
+    
+    Raises:
+        HTTPException: 404 если пользователь не найден, 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /users/123
+        >>> # Response: UserResponse with id=123
+    """
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
@@ -74,7 +152,25 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
 
 @router.get("/by-username/{username}", response_model=UserResponse)
 def read_user_by_username(username: str, db: Session = Depends(get_db)):
-    """Получение пользователя по username"""
+    """Получает пользователя по username.
+    
+    Ищет пользователя в системе по его Telegram username.
+    Полезно для поиска пользователей по их публичным именам.
+    
+    Args:
+        username (str): Telegram username пользователя без символа @.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        UserResponse: Данные найденного пользователя.
+    
+    Raises:
+        HTTPException: 404 если пользователь не найден, 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /users/by-username/john_doe
+        >>> # Response: UserResponse for user with username 'john_doe'
+    """
     try:
         user = db.query(User).filter(User.username == username).first()
         if user is None:
@@ -86,7 +182,33 @@ def read_user_by_username(username: str, db: Session = Depends(get_db)):
 
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
-    """Обновление данных пользователя"""
+    """Обновляет данные пользователя.
+    
+    Позволяет изменить информацию о пользователе, включая статусы активности,
+    активации и принадлежности к команде. Проверяет уникальность username.
+    
+    Args:
+        user_id (int): Уникальный идентификатор пользователя в базе данных.
+        user (UserUpdate): Новые данные для обновления (только измененные поля).
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        UserResponse: Обновленные данные пользователя.
+    
+    Raises:
+        HTTPException: 
+            - 404 если пользователь не найден
+            - 400 если username уже занят другим пользователем
+            - 500 при ошибках базы данных
+    
+    Examples:
+        >>> # PUT /users/123
+        >>> {
+        ...   "is_active": false,
+        ...   "full_name": "John Updated Doe"
+        ... }
+        >>> # Response: UserResponse with updated fields
+    """
     try:
         db_user = db.query(User).filter(User.id == user_id).first()
         if db_user is None:
@@ -124,7 +246,25 @@ def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
 
 @router.delete("/{user_id}", status_code=204)
 def delete_user(user_id: int, db: Session = Depends(get_db)):
-    """Удаление пользователя"""
+    """Удаляет пользователя из системы.
+    
+    Полностью удаляет пользователя и всю связанную с ним информацию
+    из базы данных. Операция необратима.
+    
+    Args:
+        user_id (int): Уникальный идентификатор пользователя в базе данных.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        None: HTTP 204 No Content при успешном удалении.
+    
+    Raises:
+        HTTPException: 404 если пользователь не найден, 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # DELETE /users/123
+        >>> # Response: HTTP 204 No Content
+    """
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
@@ -140,7 +280,21 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 @router.get("/bot/info")
 def get_bot_info():
-    """Получение информации о боте"""
+    """Получает информацию о Telegram боте.
+    
+    Возвращает публичную информацию о боте, включая его username,
+    который используется для формирования ссылок активации.
+    
+    Returns:
+        dict: Словарь с информацией о боте, включая поле 'bot_username'.
+    
+    Raises:
+        HTTPException: 500 при ошибках подключения к Telegram API.
+    
+    Examples:
+        >>> # GET /users/bot/info
+        >>> # Response: {"bot_username": "aidailytasksBot"}
+    """
     try:
         bot_username = get_bot_username()
         return {"bot_username": bot_username}

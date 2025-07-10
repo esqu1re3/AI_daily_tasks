@@ -8,12 +8,59 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 class BotService:
+    """Сервис для обработки логики Telegram бота.
+    
+    Обрабатывает все типы сообщений от пользователей в личных чатах:
+    команды активации, ответы на утренние вопросы, управление пользователями.
+    Интегрируется с Gemini AI для обработки планов команды.
+    
+    Attributes:
+        gemini_service: Экземпляр GeminiService для работы с AI.
+    
+    Examples:
+        >>> from app.services.gemini_service import GeminiService
+        >>> gemini = GeminiService()
+        >>> bot_service = BotService(gemini)
+        >>> # Сервис готов к обработке сообщений
+    """
+    
     def __init__(self, gemini_service):
+        """Инициализация сервиса бота.
+        
+        Args:
+            gemini_service: Экземпляр GeminiService для генерации ответов и сводок.
+        
+        Examples:
+            >>> gemini = GeminiService()
+            >>> bot_service = BotService(gemini)
+        """
         self.gemini_service = gemini_service
         logger.debug("BotService initialized")
 
     def handle_user_message_sync(self, message, bot):
-        """Обработка сообщений пользователей в личных чатах"""
+        """Обрабатывает сообщения пользователей в личных чатах.
+        
+        Основная точка входа для обработки всех сообщений от пользователей.
+        Определяет тип сообщения и направляет его соответствующему обработчику.
+        
+        Поддерживаемые сценарии:
+        - Команда /start с токеном активации
+        - Команда /start без токена (для активированных пользователей)
+        - Текстовые ответы на утренние вопросы
+        - Управление неактивированными пользователями
+        
+        Args:
+            message: Объект сообщения от Telegram API с атрибутами from_user, text, chat.
+            bot: Экземпляр Telegram бота для отправки ответов.
+        
+        Note:
+            Обрабатывает только личные сообщения (chat.type == 'private').
+            Все ошибки логируются, пользователь получает уведомление об ошибке.
+        
+        Examples:
+            >>> # Вызывается автоматически при получении сообщения
+            >>> bot_service.handle_user_message_sync(telegram_message, telegram_bot)
+        """
         db = SessionLocal()
         try:
             user = message.from_user
@@ -97,7 +144,21 @@ class BotService:
             db.close()
 
     def _handle_start_command(self, message, bot, db):
-        """Обработка команды /start с возможным токеном активации"""
+        """Обрабатывает команду /start с возможным токеном активации.
+        
+        Различает два сценария:
+        1. /start с токеном - активация нового пользователя
+        2. /start без токена - приветствие активированного пользователя
+        
+        Args:
+            message: Объект сообщения Telegram с командой /start.
+            bot: Экземпляр Telegram бота для отправки ответов.
+            db: Сессия базы данных для работы с пользователями.
+        
+        Examples:
+            >>> # Вызывается автоматически при команде /start
+            >>> self._handle_start_command(start_message, bot, db_session)
+        """
         user = message.from_user
         text = message.text
         
@@ -131,7 +192,30 @@ class BotService:
             )
 
     def _activate_user_with_token(self, activation_token, telegram_user, db, bot, message):
-        """Активация пользователя через токен (может быть новый пользователь)"""
+        """Активирует пользователя через токен активации.
+        
+        Выполняет процедуру активации нового пользователя или реактивации существующего:
+        1. Проверяет валидность токена активации
+        2. Ищет существующего пользователя по user_id или username
+        3. Создает нового пользователя или обновляет существующего
+        4. Устанавливает статус активации и обновляет профиль
+        
+        Args:
+            activation_token (str): Токен активации из ссылки (например, "group_activation").
+            telegram_user: Объект пользователя Telegram с атрибутами id, username, first_name, last_name.
+            db: Сессия базы данных для работы с пользователями.
+            bot: Экземпляр Telegram бота для отправки ответов.
+            message: Объект сообщения Telegram для отправки ответа.
+        
+        Note:
+            Обрабатывает конфликты username между пользователями.
+            При успешной активации отправляет приветственное сообщение.
+            Откатывает изменения в БД при ошибках.
+        
+        Examples:
+            >>> # Вызывается автоматически при команде /start group_activation
+            >>> self._activate_user_with_token("group_activation", telegram_user, db, bot, message)
+        """
         try:
             # Проверяем валидность токена сначала
             if activation_token != "group_activation":
@@ -219,7 +303,26 @@ class BotService:
             )
 
     def _process_daily_plan(self, db_user, text, bot, message):
-        """Обработка плана на день"""
+        """Обрабатывает план пользователя на день.
+        
+        Сохраняет ответ пользователя как план на день и интегрируется с системой
+        планировщика для автоматической генерации сводок команды.
+        
+        Args:
+            db_user: Объект пользователя из базы данных (модель User).
+            text (str): Текст плана пользователя на день.
+            bot: Экземпляр Telegram бота для отправки подтверждения.
+            message: Объект сообщения Telegram для отправки ответа.
+        
+        Note:
+            Автоматически интегрируется с планировщиком для проверки полноты ответов.
+            Отправляет пользователю подтверждение о принятии плана.
+            Использует scheduler.process_user_response для дальнейшей обработки.
+        
+        Examples:
+            >>> # Вызывается автоматически при получении текстового сообщения
+            >>> self._process_daily_plan(user_from_db, "План на сегодня: доделать проект", bot, message)
+        """
         try:
             # Сохраняем ответ пользователя
             from app.services.scheduler import process_user_response
