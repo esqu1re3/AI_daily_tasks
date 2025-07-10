@@ -2,6 +2,7 @@
 import asyncio
 import telebot
 import logging
+import threading
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.config import settings
@@ -24,7 +25,7 @@ except (ValueError, TypeError):
     logger.warning("ADMIN_ID не настроен в переменных окружения")
 
 def send_morning_questions():
-    """Утренняя рассылка вопросов в 9:00 UTC+6"""
+    """Утренняя рассылка вопросов в 9:30 UTC+6"""
     db = SessionLocal()
     try:
         # Сбрасываем флаги ответов на новый день
@@ -63,8 +64,8 @@ def send_morning_questions():
         
         logger.info(f"Утренняя рассылка завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
         
-        # Запланируем генерацию сводки ровно через 5 минут
-        summary_time = datetime.now() + timedelta(minutes=5)
+        # Запланируем генерацию сводки ровно через 1 час
+        summary_time = datetime.now() + timedelta(hours=1)
         scheduler.add_job(
             generate_summary_after_timeout,
             'date',
@@ -72,7 +73,7 @@ def send_morning_questions():
             id='summary_after_5min'
         )
         
-        logger.info(f"Сводка будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 5 минут)")
+        logger.info(f"Сводка будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 1 час)")
         
     except Exception as e:
         logger.error(f"Ошибка в утренней рассылке: {e}")
@@ -100,8 +101,13 @@ def generate_summary_after_timeout():
         
         logger.info(f"Время истекло. Статус ответов: {len(responded_users)}/{len(active_users)} участников ответили")
         
-        # Генерируем сводку с тем что есть
-        generate_and_send_summary(active_users)
+        # Генерируем сводку с тем что есть В ОТДЕЛЬНОМ ПОТОКЕ
+        threading.Thread(
+            target=generate_and_send_summary, 
+            args=(active_users,), 
+            daemon=True
+        ).start()
+        logger.info("Генерация сводки по таймауту запущена в отдельном потоке")
                 
     except Exception as e:
         logger.error(f"Ошибка при генерации сводки по таймауту: {e}")
@@ -274,8 +280,13 @@ def process_user_response(user, response_text):
                 except Exception as e:
                     logger.warning(f"Не удалось отменить запланированную задачу: {e}")
                 
-                # Генерируем сводку немедленно
-                generate_and_send_summary(active_users)
+                # Генерируем сводку немедленно В ОТДЕЛЬНОМ ПОТОКЕ
+                threading.Thread(
+                    target=generate_and_send_summary, 
+                    args=(active_users,), 
+                    daemon=True
+                ).start()
+                logger.info("Генерация сводки запущена в отдельном потоке")
             else:
                 logger.info(f"Ответили {len(responded_users)}/{len(active_users)} участников. Ждем остальных или истечения времени.")
             
@@ -302,19 +313,19 @@ def start_scheduler():
                 scheduler.remove_job(job.id)
                 logger.info("Удалена существующая задача morning_questions")
         
-        # Утренняя рассылка в 9:00 по времени Бишкек (UTC+6)
+        # Утренняя рассылка в 9:30 по времени Бишкек (UTC+6)
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=9,  # 9:00 по Бишкеку
-            minute=0,
+            hour=9,  # 9:30 по Бишкеку
+            minute=30,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
         
         if not scheduler.running:
             scheduler.start()
-            logger.info("✅ Scheduler запущен (утренняя рассылка в 9:00 Asia/Bishkek, только активированным участникам)")
+            logger.info("✅ Scheduler запущен (утренняя рассылка в 9:30 Asia/Bishkek, только активированным участникам)")
         
     except Exception as e:
         logger.error(f"❌ Ошибка запуска планировщика: {e}")
