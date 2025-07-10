@@ -96,3 +96,8 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Gemini API error: {e}\n{traceback.format_exc()}")
             return None
+
+    # Синхронная обертка для совместимости с тестами и вызовами без asyncio
+    def generate_text(self, prompt: str):
+        import asyncio
+        return asyncio.run(self.generate_text_async(prompt))
