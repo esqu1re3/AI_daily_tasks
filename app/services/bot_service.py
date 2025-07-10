@@ -18,26 +18,62 @@ class BotService:
         try:
             user = message.from_user
             user_id = user.id
+            username = user.username
             text = message.text
             
-            logger.info(f"Processing message from user @{user.username or user_id}: {text[:50]}...")
+            logger.info(f"Processing message from user @{username or user_id}: {text[:50]}...")
             
-            # Ищем пользователя по user_id
+            # Сначала ищем пользователя по user_id (если уже верифицирован)
             db_user = db.query(User).filter(User.user_id == str(user.id)).first()
+            
+            # Если не найден по user_id, ищем по username (неверифицированный)
+            if not db_user and username:
+                db_user = db.query(User).filter(
+                    User.username == username, 
+                    User.is_verified == False
+                ).first()
+                
+                # Если найден неверифицированный пользователь, верифицируем его
+                if db_user:
+                    self._verify_user(db_user, user, db)
+                    logger.info(f"Пользователь @{username} верифицирован и связан с user_id {user.id}")
+                    bot.reply_to(
+                        message,
+                        f"✅ Отлично! Теперь вы подключены к системе.\n\n"
+                        f"🌅 Каждое утро в 9:00 я буду спрашивать у вас планы на день.\n"
+                        f"Просто отвечайте на мои сообщения своими рабочими планами."
+                    )
+                    return
             
             if not db_user:
                 bot.reply_to(
                     message,
-                    "❌ Вы не добавлены в систему администратором. "
-                    "Обратитесь к администратору для получения доступа."
+                    "❌ Вы не добавлены в систему администратором.\n\n"
+                    f"Сообщите администратору ваш @username: @{username or 'не_указан'}\n"
+                    "После добавления напишите боту /start снова."
+                )
+                return
+            
+            # Проверяем, что пользователь верифицирован
+            if not db_user.is_verified:
+                bot.reply_to(
+                    message,
+                    "⚠️ Ваш аккаунт еще не активирован. "
+                    "Обратитесь к администратору."
                 )
                 return
             
             # Обновляем информацию о пользователе если нужно
             updated = False
             if user.username and db_user.username != user.username:
-                db_user.username = user.username
-                updated = True
+                # Проверяем, что новый username не занят
+                existing_user = db.query(User).filter(
+                    User.username == user.username, 
+                    User.id != db_user.id
+                ).first()
+                if not existing_user:
+                    db_user.username = user.username
+                    updated = True
             
             if user.first_name:
                 full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
@@ -58,6 +94,17 @@ class BotService:
                 )
                 return
             
+            # Проверяем, является ли это командой /start
+            if text and text.startswith('/start'):
+                bot.reply_to(
+                    message,
+                    "👋 Привет! Вы подключены к системе сбора утренних планов команды.\n\n"
+                    "🌅 Каждое утро в 9:00 я буду спрашивать у вас планы на день.\n\n"
+                    "🔹 Просто отвечайте на мои утренние сообщения своими рабочими планами.\n\n"
+                    "✅ Ваш аккаунт активен и готов к работе!"
+                )
+                return
+            
             # Обрабатываем ответ как план на день
             self._process_daily_plan(db_user, text, bot, message)
             
@@ -66,6 +113,25 @@ class BotService:
             bot.reply_to(message, "❌ Произошла ошибка при обработке сообщения")
         finally:
             db.close()
+
+    def _verify_user(self, db_user, telegram_user, db):
+        """Верификация пользователя - связывание username с user_id"""
+        try:
+            db_user.user_id = str(telegram_user.id)
+            db_user.is_verified = True
+            
+            # Обновляем полное имя если есть
+            if telegram_user.first_name:
+                full_name = f"{telegram_user.first_name or ''} {telegram_user.last_name or ''}".strip()
+                db_user.full_name = full_name
+            
+            db.commit()
+            logger.info(f"Пользователь @{db_user.username} успешно верифицирован")
+            
+        except Exception as e:
+            logger.error(f"Ошибка верификации пользователя: {e}")
+            db.rollback()
+            raise
 
     def _process_daily_plan(self, db_user, text, bot, message):
         """Обработка плана на день"""

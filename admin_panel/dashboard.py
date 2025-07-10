@@ -29,11 +29,12 @@ def init_database():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE NOT NULL,
-            username TEXT,
+            user_id TEXT UNIQUE,
+            username TEXT UNIQUE NOT NULL,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,
+            is_verified BOOLEAN DEFAULT 0,
             last_response TEXT,
             has_responded_today BOOLEAN DEFAULT 0
         )
@@ -57,34 +58,44 @@ def load_users():
         logger.error(f"Ошибка загрузки пользователей: {e}")
         return pd.DataFrame()
 
-def add_user(user_id):
-    """Добавление нового пользователя"""
+def validate_username(username):
+    """Валидация username"""
+    # Убираем @ если есть
+    username = username.strip().lstrip('@')
+    
+    if not username:
+        return False, "Username не может быть пустым"
+    
+    # Проверяем формат username (латиница, цифры, подчеркивания, минимум 5 символов)
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]{5,}$', username):
+        return False, "Username должен содержать только латинские буквы, цифры и подчеркивания (минимум 5 символов)"
+    
+    return True, username
+
+def add_user(username):
+    """Добавление нового пользователя по username"""
     try:
-        # Убираем лишние символы и проверяем что это число
-        user_id = str(user_id).strip()
+        # Валидируем username
+        is_valid, result = validate_username(username)
+        if not is_valid:
+            return False, result
         
-        if not user_id:
-            return False, "User ID не может быть пустым"
-        
-        # Проверяем что это число
-        try:
-            int(user_id)
-        except ValueError:
-            return False, "User ID должен быть числом"
+        clean_username = result
         
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
         
         cursor.execute(
-            "INSERT INTO users (user_id, is_active) VALUES (?, 1)",
-            (user_id,)
+            "INSERT INTO users (username, is_active, is_verified) VALUES (?, 1, 0)",
+            (clean_username,)
         )
         
         conn.commit()
         conn.close()
-        return True, f"Пользователь с ID {user_id} успешно добавлен"
+        return True, f"Пользователь @{clean_username} добавлен. Попросите его написать боту /start для активации."
     except sqlite3.IntegrityError:
-        return False, "Пользователь с таким ID уже существует"
+        return False, "Пользователь с таким username уже существует"
     except Exception as e:
         logger.error(f"Ошибка добавления пользователя: {e}")
         return False, f"Ошибка: {str(e)}"
@@ -146,7 +157,7 @@ if not init_database():
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ======================
 st.title("👥 AI Daily Tasks — Управление пользователями")
-st.caption("Добавляйте пользователей по User ID для получения утренних планов")
+st.caption("Добавляйте пользователей по @username для получения утренних планов")
 
 # Разделяем на вкладки
 tab1, tab2, tab3 = st.tabs(["👤 Пользователи", "➕ Добавить", "📊 Статистика"])
@@ -181,17 +192,24 @@ with tab1:
                 col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
                 
                 with col1:
-                    status_icon = "✅" if user['is_active'] else "❌"
-                    st.write(f"{status_icon} **ID: {user['user_id']}**")
-                    if user['username']:
-                        st.caption(f"@{user['username']}")
+                    # Статус активности
+                    activity_icon = "✅" if user['is_active'] else "❌"
+                    # Статус верификации
+                    verify_icon = "✅" if user['is_verified'] else "⏳"
+                    
+                    st.write(f"{activity_icon} **@{user['username']}**")
                     if user['full_name']:
                         st.caption(f"👤 {user['full_name']}")
+                    if user['user_id']:
+                        st.caption(f"ID: {user['user_id']}")
                 
                 with col2:
-                    st.write(f"📱 ID: {user['user_id']}")
-                    if user['username']:
-                        st.write(f"👤 @{user['username']}")
+                    st.write(f"{verify_icon} Верификация")
+                    if user['is_verified']:
+                        st.write("🔗 Подключен к боту")
+                    else:
+                        st.write("⚠️ Не активирован")
+                        st.caption("Нужно написать боту /start")
                 
                 with col3:
                     response_icon = "✅" if user['has_responded_today'] else "⏳"
@@ -252,19 +270,19 @@ with tab2:
     
     # Используем динамический ключ для формы, чтобы очистить поля после успешного добавления
     with st.form(key=f"add_user_form_{st.session_state.form_key}"):
-        st.write("Введите User ID пользователя Telegram")
+        st.write("Введите @username пользователя Telegram")
         
-        user_id_input = st.text_input(
-            "User ID", 
-            placeholder="123456789 или 987654321",
-            help="Введите User ID пользователя Telegram"
+        username_input = st.text_input(
+            "Username", 
+            placeholder="@john_doe или john_doe",
+            help="Введите username пользователя Telegram (с @ или без)"
         )
         
         submitted = st.form_submit_button("Добавить пользователя", type="primary")
         
         if submitted:
-            if user_id_input.strip():
-                success, message = add_user(user_id_input.strip())
+            if username_input.strip():
+                success, message = add_user(username_input.strip())
                 if success:
                     # Сохраняем сообщение об успехе и увеличиваем ключ формы для очистки
                     st.session_state.success_message = message
@@ -277,7 +295,7 @@ with tab2:
                     st.session_state.success_message = None
                     st.rerun()
             else:
-                st.session_state.error_message = "Введите User ID пользователя!"
+                st.session_state.error_message = "Введите username пользователя!"
                 st.session_state.success_message = None
                 st.rerun()
 
@@ -296,8 +314,8 @@ with tab3:
             st.metric("Активных", active_users)
         
         with col3:
-            users_with_username = len(users_df[users_df['username'].notna()])
-            st.metric("С username", users_with_username)
+            verified_users = len(users_df[users_df['is_verified'] == 1])
+            st.metric("Подключенных к боту", verified_users)
         
         with col4:
             responded_today = len(users_df[users_df['has_responded_today'] == 1])
@@ -318,15 +336,17 @@ with st.sidebar:
     st.write("""
     **Как это работает:**
     
-    1. 👤 Добавьте пользователей по User ID
-    2. 🤖 Бот отправит им сообщение в 9:00
-    3. ⏳ Ждет ответов от всех пользователей
-    4. 🧠 Gemini создает сводку планов
-    5. 📬 Админ получает общий отчет
+    1. 👤 Добавьте пользователей по @username
+    2. 🔗 Пользователи должны написать боту /start
+    3. 🤖 Бот отправит им сообщение в 9:00
+    4. ⏳ Ждет ответов от всех пользователей
+    5. 🧠 Gemini создает сводку планов
+    6. 📬 Админ получает общий отчет
     
-    **Как получить User ID:**
-    - Напишите @userinfobot в Telegram
-    - Или попросите пользователя переслать сообщение боту @aidailytasks_bot
+    **Новая система добавления:**
+    - Добавляйте пользователей по @username
+    - Система автоматически свяжет username с user_id при первом контакте
+    - Только верифицированные пользователи получают утренние сообщения
     """)
     
     st.divider()

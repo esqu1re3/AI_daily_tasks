@@ -28,32 +28,35 @@ def create_empty_users_table():
         cursor.execute("""
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE NOT NULL,
-            username TEXT,
+            user_id TEXT UNIQUE,
+            username TEXT UNIQUE NOT NULL,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,
+            is_verified BOOLEAN DEFAULT 0,
             last_response TEXT,
             has_responded_today BOOLEAN DEFAULT 0
         )
         """)
         conn.commit()
         conn.close()
-        logger.info("✅ Пустая таблица users создана")
+        logger.info("✅ Пустая таблица users создана с актуальной структурой")
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка создания таблицы users: {e}")
         return False
 
 def main():
-    print("\n⚠️  ВНИМАНИЕ: Этот скрипт полностью удалит ВСЕ данные в базе данных!\n")
-    confirm = input("Вы уверены, что хотите сбросить базу данных? (yes/no): ").strip().lower()
-    if confirm != "yes":
-        print("Операция отменена.")
-        return
+    print("🔄 Сброс базы данных AI Daily Tasks...")
+    print("⚠️  Удаляю все данные в базе данных...")
+    
     if remove_db_file():
         if create_empty_users_table():
             print("\n✅ База данных сброшена и готова к использованию!")
+            print("\n📝 Структура таблицы users обновлена:")
+            print("   - user_id: nullable (заполняется при верификации)")
+            print("   - username: уникальный и обязательный")
+            print("   - is_verified: новое поле для отслеживания верификации")
         else:
             print("❌ Ошибка при создании новой таблицы users.")
     else:

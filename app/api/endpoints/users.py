@@ -17,16 +17,17 @@ logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=UserResponse, status_code=201)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    """Создание нового пользователя"""
+    """Создание нового пользователя по username"""
     try:
-        # Проверка на существующего пользователя
-        db_user = db.query(User).filter(User.telegram_id == user.telegram_id).first()
+        # Проверка на существующего пользователя по username
+        db_user = db.query(User).filter(User.username == user.username).first()
         if db_user:
-            raise HTTPException(status_code=400, detail="User already exists")
+            raise HTTPException(status_code=400, detail="User with this username already exists")
         
         new_user = User(
-            name=user.name,
-            telegram_id=user.telegram_id
+            username=user.username,
+            full_name=user.full_name,
+            is_verified=False  # новые пользователи не верифицированы
         )
         db.add(new_user)
         db.commit()
@@ -59,6 +60,18 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error fetching user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.get("/by-username/{username}", response_model=UserResponse)
+def read_user_by_username(username: str, db: Session = Depends(get_db)):
+    """Получение пользователя по username"""
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+    except Exception as e:
+        logger.error(f"Error fetching user {username}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
     """Обновление данных пользователя"""
@@ -67,10 +80,24 @@ def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
         if db_user is None:
             raise HTTPException(status_code=404, detail="User not found")
         
-        if user.name is not None:
-            db_user.name = user.name
-        if user.telegram_id is not None:
-            db_user.telegram_id = user.telegram_id
+        if user.username is not None:
+            # Проверяем уникальность username
+            existing_user = db.query(User).filter(
+                User.username == user.username, 
+                User.id != user_id
+            ).first()
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Username already taken")
+            db_user.username = user.username
+            
+        if user.full_name is not None:
+            db_user.full_name = user.full_name
+            
+        if user.is_active is not None:
+            db_user.is_active = user.is_active
+            
+        if user.is_verified is not None:
+            db_user.is_verified = user.is_verified
             
         db.commit()
         db.refresh(db_user)

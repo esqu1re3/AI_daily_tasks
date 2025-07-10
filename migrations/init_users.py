@@ -29,11 +29,12 @@ def create_new_users_table():
         cursor.execute("""
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE NOT NULL,
-            username TEXT,
+            user_id TEXT UNIQUE,
+            username TEXT UNIQUE NOT NULL,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,
+            is_verified BOOLEAN DEFAULT 0,
             last_response TEXT,
             has_responded_today BOOLEAN DEFAULT 0
         )
@@ -74,8 +75,9 @@ if __name__ == "__main__":
         print("\n✅ Миграция завершена успешно!")
         print("\n📝 Теперь вы можете:")
         print("   1. Запустить админ панель: streamlit run admin_panel/dashboard.py")
-        print("   2. Добавить пользователей через админ панель")
-        print("   3. Запустить основное приложение: python -m app.main")
+        print("   2. Добавить пользователей по @username через админ панель")
+        print("   3. Попросить пользователей написать боту /start для активации")
+        print("   4. Запустить основное приложение: python -m app.main")
         
     except Exception as e:
         logger.error(f"💥 Фатальная ошибка: {e}")
