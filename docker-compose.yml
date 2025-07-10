@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  ai-daily-tasks:
+    build: .
+    container_name: ai-daily-tasks
+    ports:
+      - "8000:8000"  # API и бот
+      - "8501:8501"  # Админ панель
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - ADMIN_ID=${ADMIN_ID}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - DATABASE_URL=sqlite:///./data/reports_backup.sqlite
+    volumes:
+      - ./data:/app/data  # Персистентное хранение базы данных
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s 
