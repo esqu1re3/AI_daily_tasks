@@ -96,3 +96,10 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Gemini API error: {e}\n{traceback.format_exc()}")
             return None
+
+    @classmethod
+    def generate_text(cls, prompt: str):
+        """Synchronous wrapper around ``generate_text_async``."""
+        import asyncio
+
+        return asyncio.run(cls().generate_text_async(prompt))

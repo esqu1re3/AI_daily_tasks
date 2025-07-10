@@ -6,11 +6,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from app.services.gemini_service import GeminiService
 
+
 def test_gemini_integration():
-    service = GeminiService()
     test_prompt = "Объясни квантовую физику простыми словами"
-    
-    response = service.generate_text(test_prompt)
+
+    response = GeminiService.generate_text(test_prompt)
     assert response and len(response) > 10, "Должен вернуться осмысленный ответ"
     print("Тест пройден. Ответ:", response[:100] + "...")
 
