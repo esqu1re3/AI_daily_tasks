@@ -3,6 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 import logging
+import secrets
+import string
+from app.config import settings
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
@@ -15,6 +18,21 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
+def generate_activation_token():
+    """Генерация уникального токена активации"""
+    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+
+def get_bot_username():
+    """Получение username бота из API"""
+    try:
+        import telebot
+        bot = telebot.TeleBot(settings.TG_BOT_TOKEN)
+        bot_info = bot.get_me()
+        return bot_info.username
+    except Exception as e:
+        logger.error(f"Ошибка получения username бота: {e}")
+        return "your_bot"  # fallback
+
 @router.post("/", response_model=UserResponse, status_code=201)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
     """Создание нового пользователя по username"""
@@ -24,10 +42,14 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         if db_user:
             raise HTTPException(status_code=400, detail="User with this username already exists")
         
+        # Генерируем уникальный токен активации
+        activation_token = generate_activation_token()
+        
         new_user = User(
             username=user.username,
             full_name=user.full_name,
-            is_verified=False  # новые пользователи не верифицированы
+            is_verified=False,  # новые пользователи не верифицированы
+            activation_token=activation_token
         )
         db.add(new_user)
         db.commit()
@@ -107,6 +129,32 @@ def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
         logger.error(f"Error updating user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.post("/{user_id}/regenerate-token", response_model=UserResponse)
+def regenerate_activation_token(user_id: int, db: Session = Depends(get_db)):
+    """Регенерация токена активации для пользователя"""
+    try:
+        db_user = db.query(User).filter(User.id == user_id).first()
+        if db_user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        if db_user.is_verified:
+            raise HTTPException(status_code=400, detail="User is already activated")
+        
+        # Генерируем новый токен
+        new_token = generate_activation_token()
+        db_user.activation_token = new_token
+        
+        db.commit()
+        db.refresh(db_user)
+        
+        logger.info(f"Регенерирован токен активации для пользователя @{db_user.username}")
+        return db_user
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error regenerating token for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.delete("/{user_id}", status_code=204)
 def delete_user(user_id: int, db: Session = Depends(get_db)):
     """Удаление пользователя"""
@@ -121,4 +169,14 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/bot/info")
+def get_bot_info():
+    """Получение информации о боте"""
+    try:
+        bot_username = get_bot_username()
+        return {"bot_username": bot_username}
+    except Exception as e:
+        logger.error(f"Error getting bot info: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")

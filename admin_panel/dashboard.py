@@ -4,6 +4,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 import logging
+import secrets
+import string
+import requests
 
 # Настройки страницы
 st.set_page_config(
@@ -18,6 +21,20 @@ DB_PATH = BASE_DIR / "data" / "reports_backup.sqlite"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def generate_activation_token():
+    """Генерация уникального токена активации"""
+    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+
+def get_bot_username():
+    """Получение username бота через API"""
+    try:
+        response = requests.get("http://127.0.0.1:8000/users/bot/info", timeout=5)
+        if response.status_code == 200:
+            return response.json().get("bot_username", "your_bot")
+        return "your_bot"
+    except:
+        return "your_bot"
 
 def init_database():
     """Создание базы данных и таблиц если они не существуют"""
@@ -36,7 +53,8 @@ def init_database():
             is_active BOOLEAN DEFAULT 1,
             is_verified BOOLEAN DEFAULT 0,
             last_response TEXT,
-            has_responded_today BOOLEAN DEFAULT 0
+            has_responded_today BOOLEAN DEFAULT 0,
+            activation_token TEXT UNIQUE
         )
         """)
         
@@ -83,22 +101,47 @@ def add_user(username):
         
         clean_username = result
         
+        # Генерируем токен активации
+        activation_token = generate_activation_token()
+        
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
         
         cursor.execute(
-            "INSERT INTO users (username, is_active, is_verified) VALUES (?, 1, 0)",
-            (clean_username,)
+            "INSERT INTO users (username, is_active, is_verified, activation_token) VALUES (?, 1, 0, ?)",
+            (clean_username, activation_token)
         )
         
         conn.commit()
         conn.close()
-        return True, f"Пользователь @{clean_username} добавлен. Попросите его написать боту /start для активации."
+        
+        # Получаем username бота и формируем ссылку
+        bot_username = get_bot_username()
+        activation_link = f"https://t.me/{bot_username}?start={activation_token}"
+        
+        return True, f"Пользователь @{clean_username} добавлен!\n\nСсылка для активации:\n{activation_link}\n\nОтправьте эту ссылку пользователю любым удобным способом."
     except sqlite3.IntegrityError:
         return False, "Пользователь с таким username уже существует"
     except Exception as e:
         logger.error(f"Ошибка добавления пользователя: {e}")
         return False, f"Ошибка: {str(e)}"
+
+def get_activation_link(user):
+    """Получение ссылки активации для пользователя"""
+    if user['activation_token']:
+        bot_username = get_bot_username()
+        return f"https://t.me/{bot_username}?start={user['activation_token']}"
+    return None
+
+def regenerate_activation_token(user_id):
+    """Регенерация токена активации через API"""
+    try:
+        response = requests.post(f"http://127.0.0.1:8000/users/{user_id}/regenerate-token", timeout=5)
+        if response.status_code == 200:
+            return True
+        return False
+    except:
+        return False
 
 def update_user_status(user_id, is_active):
     """Обновление статуса пользователя"""
@@ -204,12 +247,26 @@ with tab1:
                         st.caption(f"ID: {user['user_id']}")
                 
                 with col2:
-                    st.write(f"{verify_icon} Верификация")
+                    st.write(f"{verify_icon} Статус")
                     if user['is_verified']:
-                        st.write("🔗 Подключен к боту")
+                        st.write("🔗 Активирован")
                     else:
                         st.write("⚠️ Не активирован")
-                        st.caption("Нужно написать боту /start")
+                        # Показываем ссылку активации для неактивированных пользователей
+                        activation_link = get_activation_link(user)
+                        if activation_link:
+                            col_link1, col_link2 = st.columns([3, 1])
+                            with col_link1:
+                                if st.button("📋 Ссылка активации", key=f"link_{user['id']}"):
+                                    st.code(activation_link, language=None)
+                                    st.caption("Отправьте эту ссылку пользователю")
+                            with col_link2:
+                                if st.button("🔄", key=f"regen_{user['id']}", help="Регенерировать ссылку"):
+                                    if regenerate_activation_token(user['id']):
+                                        st.success("Новая ссылка сгенерирована!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Ошибка регенерации")
                 
                 with col3:
                     response_icon = "✅" if user['has_responded_today'] else "⏳"
@@ -315,7 +372,7 @@ with tab3:
         
         with col3:
             verified_users = len(users_df[users_df['is_verified'] == 1])
-            st.metric("Подключенных к боту", verified_users)
+            st.metric("Активированных", verified_users)
         
         with col4:
             responded_today = len(users_df[users_df['has_responded_today'] == 1])
@@ -337,16 +394,18 @@ with st.sidebar:
     **Как это работает:**
     
     1. 👤 Добавьте пользователей по @username
-    2. 🔗 Пользователи должны написать боту /start
-    3. 🤖 Бот отправит им сообщение в 9:00
-    4. ⏳ Ждет ответов от всех пользователей
-    5. 🧠 Gemini создает сводку планов
-    6. 📬 Админ получает общий отчет
+    2. 📱 Отправьте ссылку активации пользователю
+    3. 🔗 Пользователь переходит по ссылке и активируется
+    4. 🤖 Бот отправит ему сообщение в 9:00
+    5. ⏳ Ждет ответов от всех пользователей
+    6. 🧠 Gemini создает сводку планов
+    7. 📬 Админ получает общий отчет
     
-    **Новая система добавления:**
-    - Добавляйте пользователей по @username
-    - Система автоматически свяжет username с user_id при первом контакте
-    - Только верифицированные пользователи получают утренние сообщения
+    **Новая система активации:**
+    - Система генерирует уникальную ссылку для каждого пользователя
+    - Ссылка содержит токен активации
+    - При переходе по ссылке пользователь автоматически активируется
+    - Только активированные пользователи получают утренние сообщения
     """)
     
     st.divider()
@@ -357,3 +416,4 @@ with st.sidebar:
     if st.button("🔧 Техническая информация"):
         st.info(f"База данных: {DB_PATH}")
         st.info(f"Статус БД: {'✅ Подключена' if DB_PATH.exists() else '❌ Не найдена'}")
+        st.info(f"Бот: @{get_bot_username()}")

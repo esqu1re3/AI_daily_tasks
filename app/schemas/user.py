@@ -22,6 +22,7 @@ class UserResponse(UserBase):
     is_verified: bool
     last_response: Optional[str] = None
     has_responded_today: bool
+    activation_token: Optional[str] = None  # токен для активации
     
     class Config:
         from_attributes = True

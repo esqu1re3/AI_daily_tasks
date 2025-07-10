@@ -22,26 +22,45 @@ def create_new_users_table():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Удаляем старую таблицу если существует
-        cursor.execute("DROP TABLE IF EXISTS users")
+        # Проверяем существование таблицы и её структуру
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        table_exists = cursor.fetchone()
         
-        # Создаем новую таблицу с правильной структурой
-        cursor.execute("""
-        CREATE TABLE users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE,
-            username TEXT UNIQUE NOT NULL,
-            full_name TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_active BOOLEAN DEFAULT 1,
-            is_verified BOOLEAN DEFAULT 0,
-            last_response TEXT,
-            has_responded_today BOOLEAN DEFAULT 0
-        )
-        """)
-        
-        conn.commit()
-        logger.info("✅ Новая таблица users успешно создана")
+        if table_exists:
+            # Проверяем наличие поля activation_token
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'activation_token' not in columns:
+                logger.info("Добавляем поле activation_token в существующую таблицу")
+                # Добавляем поле без UNIQUE ограничения (SQLite не поддерживает ALTER с UNIQUE)
+                cursor.execute("ALTER TABLE users ADD COLUMN activation_token TEXT")
+                conn.commit()
+                logger.info("✅ Поле activation_token добавлено")
+            else:
+                logger.info("✅ Поле activation_token уже существует")
+        else:
+            # Создаем новую таблицу с правильной структурой
+            cursor.execute("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT UNIQUE,
+                username TEXT UNIQUE NOT NULL,
+                full_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT 1,
+                is_verified BOOLEAN DEFAULT 0,
+                last_response TEXT,
+                has_responded_today BOOLEAN DEFAULT 0,
+                activation_token TEXT
+            )
+            """)
+            
+            # Добавляем индекс для уникальности activation_token
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_activation_token ON users(activation_token) WHERE activation_token IS NOT NULL")
+            
+            conn.commit()
+            logger.info("✅ Новая таблица users успешно создана")
         
     except sqlite3.Error as e:
         logger.error(f"❌ Ошибка работы с БД: {e}")
@@ -64,9 +83,9 @@ def print_table_structure():
 
 if __name__ == "__main__":
     try:
-        print("🔄 Создание базы данных для AI Daily Tasks...")
+        print("🔄 Обновление базы данных для AI Daily Tasks...")
         
-        # Создаем новую таблицу
+        # Создаем/обновляем таблицу
         create_new_users_table()
         
         # Показываем результат
@@ -76,7 +95,7 @@ if __name__ == "__main__":
         print("\n📝 Теперь вы можете:")
         print("   1. Запустить админ панель: streamlit run admin_panel/dashboard.py")
         print("   2. Добавить пользователей по @username через админ панель")
-        print("   3. Попросить пользователей написать боту /start для активации")
+        print("   3. Отправить пользователям ссылки активации")
         print("   4. Запустить основное приложение: python -m app.main")
         
     except Exception as e:
