@@ -315,8 +315,8 @@ def start_scheduler():
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=15,  # 9:30 по Бишкеку
-            minute=7,
+            hour=9,  # 9:30 по Бишкеку
+            minute=30,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
