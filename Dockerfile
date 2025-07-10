@@ -32,5 +32,17 @@ EXPOSE 8000 8501
 # Инициализируем базу данных при первом запуске
 RUN python migrations/init_users.py
 
-# Запускаем систему через run_all.py
-CMD ["python", "run_all.py"] 
+# Создаем скрипт запуска для Docker
+RUN echo '#!/bin/bash\n\
+echo "🚀 Запуск AI Daily Tasks в Docker..."\n\
+echo "🎛️ Запуск админ панели..."\n\
+streamlit run admin_panel/dashboard.py --server.address 0.0.0.0 --server.port 8501 &\n\
+echo "🤖 Запуск основного приложения..."\n\
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &\n\
+echo "✅ Система запущена!"\n\
+echo "🌐 Админ панель: http://localhost:8501"\n\
+echo "🌐 API: http://localhost:8000"\n\
+wait\n' > /app/start.sh && chmod +x /app/start.sh
+
+# Запускаем систему через Docker скрипт
+CMD ["/app/start.sh"] 
