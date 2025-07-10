@@ -3,8 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 import logging
-import secrets
-import string
 from app.config import settings
 from app.core.database import get_db
 from app.models.user import User
@@ -17,10 +15,6 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
-
-def generate_activation_token():
-    """Генерация уникального токена активации"""
-    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
 
 def get_bot_username():
     """Получение username бота из API"""
@@ -35,21 +29,17 @@ def get_bot_username():
 
 @router.post("/", response_model=UserResponse, status_code=201)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    """Создание нового пользователя по username"""
+    """Создание нового пользователя (пользователи создаются автоматически при активации)"""
     try:
-        # Проверка на существующего пользователя по username
-        db_user = db.query(User).filter(User.username == user.username).first()
-        if db_user:
-            raise HTTPException(status_code=400, detail="User with this username already exists")
-        
-        # Генерируем уникальный токен активации
-        activation_token = generate_activation_token()
+        # Пользователи создаются автоматически при активации
+        # Этот эндпоинт оставлен для совместимости
         
         new_user = User(
             username=user.username,
             full_name=user.full_name,
-            is_verified=False,  # новые пользователи не верифицированы
-            activation_token=activation_token
+            is_verified=False,  # новые пользователи не активированы
+            is_group_member=True,  # по умолчанию участники команды
+            activation_token=None
         )
         db.add(new_user)
         db.commit()
@@ -121,38 +111,15 @@ def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
         if user.is_verified is not None:
             db_user.is_verified = user.is_verified
             
+        if user.is_group_member is not None:
+            db_user.is_group_member = user.is_group_member
+            
         db.commit()
         db.refresh(db_user)
         return db_user
     except Exception as e:
         db.rollback()
         logger.error(f"Error updating user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/{user_id}/regenerate-token", response_model=UserResponse)
-def regenerate_activation_token(user_id: int, db: Session = Depends(get_db)):
-    """Регенерация токена активации для пользователя"""
-    try:
-        db_user = db.query(User).filter(User.id == user_id).first()
-        if db_user is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        if db_user.is_verified:
-            raise HTTPException(status_code=400, detail="User is already activated")
-        
-        # Генерируем новый токен
-        new_token = generate_activation_token()
-        db_user.activation_token = new_token
-        
-        db.commit()
-        db.refresh(db_user)
-        
-        logger.info(f"Регенерирован токен активации для пользователя @{db_user.username}")
-        return db_user
-        
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error regenerating token for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.delete("/{user_id}", status_code=204)

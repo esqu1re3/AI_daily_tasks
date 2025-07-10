@@ -29,11 +29,12 @@ def create_empty_users_table():
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT UNIQUE,
-            username TEXT UNIQUE NOT NULL,
+            username TEXT UNIQUE,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,
             is_verified BOOLEAN DEFAULT 0,
+            is_group_member BOOLEAN DEFAULT 1,
             last_response TEXT,
             has_responded_today BOOLEAN DEFAULT 0,
             activation_token TEXT
@@ -60,9 +61,10 @@ def main():
             print("\n✅ База данных сброшена и готова к использованию!")
             print("\n📝 Структура таблицы users обновлена:")
             print("   - user_id: nullable (заполняется при активации)")
-            print("   - username: уникальный и обязательный")
+            print("   - username: nullable (может отсутствовать)")
             print("   - is_verified: поле для отслеживания активации")
-            print("   - activation_token: токен для активации через диплинки")
+            print("   - activation_token: токен для активации через ссылки")
+            print("   - is_group_member: участие в команде")
         else:
             print("❌ Ошибка при создании новой таблицы users.")
     else:

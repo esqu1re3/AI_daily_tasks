@@ -28,24 +28,52 @@ class TelegramBot:
         def handle_start(message):
             try:
                 user = message.from_user
-                logger.info(f"Start command from user {user.id} (@{user.username})")
+                chat_type = message.chat.type
+                logger.info(f"Start command from user {user.id} (@{user.username}) in {chat_type}")
                 
-                # Вызываем логику верификации из BotService
-                self.bot_service.handle_user_message_sync(message, self.bot)
+                # Обрабатываем только личные сообщения
+                if chat_type == 'private':
+                    self.bot_service.handle_user_message_sync(message, self.bot)
                 
             except Exception as e:
                 logger.error(f"Error in start command: {e}")
-                self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке команды")
+                if message.chat.type == 'private':
+                    self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке команды")
+
+        @self.bot.message_handler(commands=['help'])
+        def handle_help(message):
+            """Обработчик команды /help"""
+            try:
+                chat_type = message.chat.type
+                if chat_type == 'private':
+                    help_text = (
+                        "🤖 *Бот для сбора утренних планов команды*\n\n"
+                        "📋 *Основные функции:*\n"
+                        "• Сбор планов от участников команды\n"
+                        "• Автоматическая генерация сводки\n"
+                        "• Ежедневные утренние опросы\n\n"
+                        "🔗 *Как начать:*\n"
+                        "1. Перейдите по ссылке активации от администратора\n"
+                        "2. Отвечайте на утренние сообщения бота\n"
+                        "3. Получите доступ к системе планирования\n\n"
+                        "⏰ *Время опросов:* 9:00 (UTC+6)\n"
+                        "📝 *Формат ответа:* свободный текст с планами на день"
+                    )
+                    self.bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+            except Exception as e:
+                logger.error(f"Error in help command: {e}")
 
         @self.bot.message_handler(func=lambda message: True, content_types=['text'])
         def handle_text_message(message):
             """Обработчик текстовых сообщений"""
             try:
-                # Передаем обработку в BotService
-                self.bot_service.handle_user_message_sync(message, self.bot)
+                # Обрабатываем только личные сообщения
+                if message.chat.type == 'private':
+                    self.bot_service.handle_user_message_sync(message, self.bot)
             except Exception as e:
                 logger.error(f"Error handling message: {e}")
-                self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке сообщения")
+                if message.chat.type == 'private':
+                    self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке сообщения")
 
     def run(self):
         """Запуск бота в режиме polling"""
@@ -77,10 +105,10 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error stopping bot: {e}")
 
-    def send_message(self, chat_id, text):
+    def send_message(self, chat_id, text, **kwargs):
         """Отправка сообщения"""
         try:
-            return self.bot.send_message(chat_id, text)
+            return self.bot.send_message(chat_id, text, **kwargs)
         except Exception as e:
             logger.error(f"Error sending message: {e}")
             return None

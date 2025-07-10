@@ -37,11 +37,12 @@ def send_morning_questions():
         # Получаем активных И активированных пользователей
         active_users = db.query(User).filter(
             User.is_active == True,
-            User.is_verified == True  # Проверяем активацию через токен
+            User.is_verified == True,  # Проверяем активацию
+            User.is_group_member == True  # Проверяем участие в команде
         ).all()
         
         if not active_users:
-            logger.info("Нет активных активированных пользователей для рассылки")
+            logger.info("Нет активных активированных участников команды для рассылки")
             return
         
         question = "🌅 Доброе утро! Какие задачи планируете решать сегодня?"
@@ -82,21 +83,22 @@ def generate_summary_after_timeout():
     """Генерация сводки через 5 минут после отправки утренних сообщений"""
     db = SessionLocal()
     try:
-        # Получаем активных активированных пользователей
+        # Получаем активных активированных участников команды
         active_users = db.query(User).filter(
             User.is_active == True,
-            User.is_verified == True  # Проверяем активацию через токен
+            User.is_verified == True,  # Проверяем активацию
+            User.is_group_member == True  # Проверяем участие в команде
         ).all()
         
         if not active_users:
-            logger.info("Нет активных активированных пользователей для генерации сводки")
+            logger.info("Нет активных активированных участников команды для генерации сводки")
             return
         
         # Проверяем кто ответил
         responded_users = [user for user in active_users if user.has_responded_today]
         not_responded_users = [user for user in active_users if not user.has_responded_today]
         
-        logger.info(f"Время истекло. Статус ответов: {len(responded_users)}/{len(active_users)} пользователей ответили")
+        logger.info(f"Время истекло. Статус ответов: {len(responded_users)}/{len(active_users)} участников ответили")
         
         # Генерируем сводку с тем что есть
         generate_and_send_summary(active_users)
@@ -151,10 +153,12 @@ def generate_and_send_summary(users):
 - Общий объем текста на каждого сотрудника до 70 слов
 - НЕ используй звездочки для выделения текста
 - НЕ указывай дату в ответе
+- НЕ пиши ничего от себя, только ответы сотрудников
+- НЕ пиши про основные направления работы, только ответы сотрудников
 - Используй простое форматирование без специальных символов
 
 Ответ должен быть в формате краткого отчета для руководителя.
-В конце отчета обязательно укажи статус ответов: {f"Не ответили: {', '.join(not_responded_users)}" if not_responded_users else "Все сотрудники предоставили свои планы"}.
+В конце отчета обязательно укажи статус ответов: {f"Не ответили: {', '.join(not_responded_users)}" if not_responded_users else "Все участники команды предоставили свои планы"}.
 """
         
         # Генерируем сводку через Gemini
@@ -187,25 +191,25 @@ def generate_and_send_summary(users):
             summary = basic_summary
         
         # Формируем финальное сообщение для админа
-        final_message = f"📊 Утренняя сводка планов команды\n"
-        final_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
-        final_message += f"👥 Участников: {len(users)}\n"
-        final_message += f"✅ Ответили: {len(responded_users)}\n"
-        final_message += f"⏳ Не ответили: {len(not_responded_users)}\n\n"
-        final_message += summary
+        admin_message = f"📊 Утренняя сводка планов команды\n"
+        admin_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
+        admin_message += f"👥 Участников: {len(users)}\n"
+        admin_message += f"✅ Ответили: {len(responded_users)}\n"
+        admin_message += f"⏳ Не ответили: {len(not_responded_users)}\n\n"
+        admin_message += summary
         
         # Отправляем админу
         try:
             # Разбиваем длинные сообщения
-            if len(final_message) > 4000:
-                parts = [final_message[i:i+4000] for i in range(0, len(final_message), 4000)]
+            if len(admin_message) > 4000:
+                parts = [admin_message[i:i+4000] for i in range(0, len(admin_message), 4000)]
                 for i, part in enumerate(parts):
                     if i == 0:
                         bot.send_message(chat_id=ADMIN_ID, text=part)
                     else:
                         bot.send_message(chat_id=ADMIN_ID, text=f"(продолжение {i+1})\n{part}")
             else:
-                bot.send_message(chat_id=ADMIN_ID, text=final_message)
+                bot.send_message(chat_id=ADMIN_ID, text=admin_message)
             
             logger.info("Сводка успешно отправлена админу")
             
@@ -227,7 +231,13 @@ def process_user_response(user, response_text):
             
             # Обновляем username и полное имя
             if user.username:
-                db_user.username = user.username
+                # Проверяем уникальность username
+                existing_user = db.query(User).filter(
+                    User.username == user.username,
+                    User.id != db_user.id
+                ).first()
+                if not existing_user:
+                    db_user.username = user.username
             
             if user.first_name:
                 full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
@@ -245,15 +255,16 @@ def process_user_response(user, response_text):
             
             logger.info(f"Обновлен ответ пользователя {user_display}")
             
-            # Проверяем, ответили ли все активные активированные пользователи (досрочная отправка)
+            # Проверяем, ответили ли все активные активированные участники команды (досрочная отправка)
             active_users = db.query(User).filter(
                 User.is_active == True,
-                User.is_verified == True  # Проверяем активацию через токен
+                User.is_verified == True,  # Проверяем активацию
+                User.is_group_member == True  # Проверяем участие в команде
             ).all()
             responded_users = [u for u in active_users if u.has_responded_today]
             
             if len(responded_users) == len(active_users) and len(active_users) > 0:
-                logger.info(f"Все пользователи ответили досрочно ({len(responded_users)}/{len(active_users)}). Генерируем сводку немедленно.")
+                logger.info(f"Все участники ответили досрочно ({len(responded_users)}/{len(active_users)}). Генерируем сводку немедленно.")
                 
                 # Отменяем запланированную задачу через 5 минут
                 try:
@@ -266,7 +277,7 @@ def process_user_response(user, response_text):
                 # Генерируем сводку немедленно
                 generate_and_send_summary(active_users)
             else:
-                logger.info(f"Ответили {len(responded_users)}/{len(active_users)} пользователей. Ждем остальных или истечения времени.")
+                logger.info(f"Ответили {len(responded_users)}/{len(active_users)} участников. Ждем остальных или истечения времени.")
             
         else:
             logger.warning(f"Пользователь с user_id {user.id} не найден в базе")
@@ -303,7 +314,7 @@ def start_scheduler():
         
         if not scheduler.running:
             scheduler.start()
-            logger.info("✅ Scheduler запущен (утренняя рассылка в 9:00 Asia/Bishkek, только активированным пользователям)")
+            logger.info("✅ Scheduler запущен (утренняя рассылка в 9:00 Asia/Bishkek, только активированным участникам)")
         
     except Exception as e:
         logger.error(f"❌ Ошибка запуска планировщика: {e}")

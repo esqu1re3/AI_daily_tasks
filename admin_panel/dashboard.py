@@ -4,9 +4,6 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 import logging
-import secrets
-import string
-import requests
 
 # Настройки страницы
 st.set_page_config(
@@ -22,20 +19,6 @@ DB_PATH = BASE_DIR / "data" / "reports_backup.sqlite"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def generate_activation_token():
-    """Генерация уникального токена активации"""
-    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-
-def get_bot_username():
-    """Получение username бота через API"""
-    try:
-        response = requests.get("http://127.0.0.1:8000/users/bot/info", timeout=5)
-        if response.status_code == 200:
-            return response.json().get("bot_username", "your_bot")
-        return "your_bot"
-    except:
-        return "your_bot"
-
 def init_database():
     """Создание базы данных и таблиц если они не существуют"""
     try:
@@ -47,11 +30,12 @@ def init_database():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT UNIQUE,
-            username TEXT UNIQUE NOT NULL,
+            username TEXT UNIQUE,
             full_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_active BOOLEAN DEFAULT 1,
             is_verified BOOLEAN DEFAULT 0,
+            is_group_member BOOLEAN DEFAULT 1,
             last_response TEXT,
             has_responded_today BOOLEAN DEFAULT 0,
             activation_token TEXT UNIQUE
@@ -75,73 +59,6 @@ def load_users():
     except Exception as e:
         logger.error(f"Ошибка загрузки пользователей: {e}")
         return pd.DataFrame()
-
-def validate_username(username):
-    """Валидация username"""
-    # Убираем @ если есть
-    username = username.strip().lstrip('@')
-    
-    if not username:
-        return False, "Username не может быть пустым"
-    
-    # Проверяем формат username (латиница, цифры, подчеркивания, минимум 5 символов)
-    import re
-    if not re.match(r'^[a-zA-Z0-9_]{5,}$', username):
-        return False, "Username должен содержать только латинские буквы, цифры и подчеркивания (минимум 5 символов)"
-    
-    return True, username
-
-def add_user(username):
-    """Добавление нового пользователя по username"""
-    try:
-        # Валидируем username
-        is_valid, result = validate_username(username)
-        if not is_valid:
-            return False, result
-        
-        clean_username = result
-        
-        # Генерируем токен активации
-        activation_token = generate_activation_token()
-        
-        conn = sqlite3.connect(str(DB_PATH))
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "INSERT INTO users (username, is_active, is_verified, activation_token) VALUES (?, 1, 0, ?)",
-            (clean_username, activation_token)
-        )
-        
-        conn.commit()
-        conn.close()
-        
-        # Получаем username бота и формируем ссылку
-        bot_username = get_bot_username()
-        activation_link = f"https://t.me/{bot_username}?start={activation_token}"
-        
-        return True, f"Пользователь @{clean_username} добавлен!\n\nСсылка для активации:\n{activation_link}\n\nОтправьте эту ссылку пользователю любым удобным способом."
-    except sqlite3.IntegrityError:
-        return False, "Пользователь с таким username уже существует"
-    except Exception as e:
-        logger.error(f"Ошибка добавления пользователя: {e}")
-        return False, f"Ошибка: {str(e)}"
-
-def get_activation_link(user):
-    """Получение ссылки активации для пользователя"""
-    if user['activation_token']:
-        bot_username = get_bot_username()
-        return f"https://t.me/{bot_username}?start={user['activation_token']}"
-    return None
-
-def regenerate_activation_token(user_id):
-    """Регенерация токена активации через API"""
-    try:
-        response = requests.post(f"http://127.0.0.1:8000/users/{user_id}/regenerate-token", timeout=5)
-        if response.status_code == 200:
-            return True
-        return False
-    except:
-        return False
 
 def update_user_status(user_id, is_active):
     """Обновление статуса пользователя"""
@@ -199,17 +116,27 @@ if not init_database():
 # ======================
 # ОСНОВНОЙ ИНТЕРФЕЙС
 # ======================
-st.title("👥 AI Daily Tasks — Управление пользователями")
-st.caption("Добавляйте пользователей по @username для получения утренних планов")
+st.title("👥 AI Daily Tasks — Управление командой")
+st.caption("Система сбора утренних планов команды")
+
+# Информационная панель
+with st.container():
+    st.info("""
+    🔗 **Ссылка для активации участников команды:**
+    
+    `https://t.me/aidailytasksBot?start=group_activation`
+    
+    Отправьте эту ссылку участникам команды для активации в системе.
+    """)
 
 # Разделяем на вкладки
-tab1, tab2, tab3 = st.tabs(["👤 Пользователи", "➕ Добавить", "📊 Статистика"])
+tab1, tab2 = st.tabs(["👤 Участники", "📊 Статистика"])
 
 with tab1:
-    st.subheader("Список пользователей")
+    st.subheader("Участники команды")
     
     # Кнопка обновления
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2 = st.columns([2, 1])
     with col1:
         if st.button("🔄 Обновить список", type="primary"):
             st.rerun()
@@ -225,187 +152,136 @@ with tab1:
     users_df = load_users()
     
     if users_df.empty:
-        st.info("👤 Пользователи не найдены. Добавьте первого пользователя!")
+        st.info("👤 Нет участников. Отправьте ссылку активации участникам команды!")
     else:
-        st.write(f"**Всего пользователей:** {len(users_df)}")
+        # Фильтруем только активированных участников
+        activated_users = users_df[users_df['is_verified'] == 1]
         
-        # Отображение таблицы с возможностью управления
-        for idx, user in users_df.iterrows():
-            with st.container():
-                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
-                
-                with col1:
-                    # Статус активности
-                    activity_icon = "✅" if user['is_active'] else "❌"
-                    # Статус верификации
-                    verify_icon = "✅" if user['is_verified'] else "⏳"
+        if activated_users.empty:
+            st.info("👤 Нет активированных участников. Участники должны перейти по ссылке активации.")
+        else:
+            st.write(f"**Активированных участников:** {len(activated_users)}")
+            
+            # Отображение таблицы с возможностью управления
+            for idx, user in activated_users.iterrows():
+                with st.container():
+                    col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
                     
-                    st.write(f"{activity_icon} **@{user['username']}**")
-                    if user['full_name']:
-                        st.caption(f"👤 {user['full_name']}")
-                    if user['user_id']:
-                        st.caption(f"ID: {user['user_id']}")
-                
-                with col2:
-                    st.write(f"{verify_icon} Статус")
-                    if user['is_verified']:
-                        st.write("🔗 Активирован")
-                    else:
-                        st.write("⚠️ Не активирован")
-                        # Показываем ссылку активации для неактивированных пользователей
-                        activation_link = get_activation_link(user)
-                        if activation_link:
-                            col_link1, col_link2 = st.columns([3, 1])
-                            with col_link1:
-                                if st.button("📋 Ссылка активации", key=f"link_{user['id']}"):
-                                    st.code(activation_link, language=None)
-                                    st.caption("Отправьте эту ссылку пользователю")
-                            with col_link2:
-                                if st.button("🔄", key=f"regen_{user['id']}", help="Регенерировать ссылку"):
-                                    if regenerate_activation_token(user['id']):
-                                        st.success("Новая ссылка сгенерирована!")
-                                        st.rerun()
-                                    else:
-                                        st.error("Ошибка регенерации")
-                
-                with col3:
-                    response_icon = "✅" if user['has_responded_today'] else "⏳"
-                    st.write(f"{response_icon} Ответ сегодня")
-                    if user['last_response']:
-                        with st.expander("Последний ответ"):
-                            st.text(user['last_response'][:200] + "..." if len(user['last_response']) > 200 else user['last_response'])
-                
-                with col4:
-                    new_status = not user['is_active']
-                    action_text = "Активировать" if new_status else "Деактивировать"
-                    if st.button(action_text, key=f"toggle_{user['id']}"):
-                        if update_user_status(user['id'], new_status):
-                            st.success(f"Статус обновлен!")
-                            st.rerun()
+                    with col1:
+                        # Статус активности
+                        activity_icon = "✅" if user['is_active'] else "❌"
+                        
+                        # Формируем отображаемое имя
+                        if user['full_name']:
+                            display_name = user['full_name']
+                        elif user['username']:
+                            display_name = f"@{user['username']}"
                         else:
-                            st.error("Ошибка обновления")
-                
-                with col5:
-                    if st.button("🗑️", key=f"delete_{user['id']}", help="Удалить пользователя"):
-                        if delete_user(user['id']):
-                            st.success("Пользователь удален!")
-                            st.rerun()
-                        else:
-                            st.error("Ошибка удаления")
-                
-                st.divider()
+                            display_name = f"ID:{user['user_id']}"
+                        
+                        st.write(f"{activity_icon} **{display_name}**")
+                        
+                        if user['username'] and user['full_name']:
+                            st.caption(f"@{user['username']}")
+                        if user['user_id']:
+                            st.caption(f"ID: {user['user_id']}")
+                    
+                    with col2:
+                        st.write("✅ Активирован")
+                        if user['created_at']:
+                            created_date = pd.to_datetime(user['created_at']).strftime('%d.%m.%Y')
+                            st.caption(f"Присоединился: {created_date}")
+                    
+                    with col3:
+                        response_icon = "✅" if user['has_responded_today'] else "⏳"
+                        st.write(f"{response_icon} Ответ сегодня")
+                        if user['last_response']:
+                            with st.expander("Последний ответ"):
+                                st.text(user['last_response'][:200] + "..." if len(user['last_response']) > 200 else user['last_response'])
+                    
+                    with col4:
+                        new_status = not user['is_active']
+                        action_text = "Активировать" if new_status else "Деактивировать"
+                        if st.button(action_text, key=f"toggle_{user['id']}"):
+                            if update_user_status(user['id'], new_status):
+                                st.success(f"Статус обновлен!")
+                                st.rerun()
+                            else:
+                                st.error("Ошибка обновления")
+                    
+                    with col5:
+                        if st.button("🗑️", key=f"delete_{user['id']}", help="Удалить участника"):
+                            if delete_user(user['id']):
+                                st.success("Участник удален!")
+                                st.rerun()
+                            else:
+                                st.error("Ошибка удаления")
+                    
+                    st.divider()
 
 with tab2:
-    st.subheader("➕ Добавить пользователя")
-    
-    # Инициализация session state для уведомлений и управления формой
-    if 'success_message' not in st.session_state:
-        st.session_state.success_message = None
-    if 'error_message' not in st.session_state:
-        st.session_state.error_message = None
-    if 'form_key' not in st.session_state:
-        st.session_state.form_key = 0
-    
-    # Показываем уведомления если есть
-    if st.session_state.success_message:
-        success_col1, success_col2 = st.columns([4, 1])
-        with success_col1:
-            st.success(st.session_state.success_message)
-        with success_col2:
-            if st.button("✕", key="close_success", help="Закрыть уведомление"):
-                st.session_state.success_message = None
-                st.rerun()
-    
-    if st.session_state.error_message:
-        error_col1, error_col2 = st.columns([4, 1])
-        with error_col1:
-            st.error(st.session_state.error_message)
-        with error_col2:
-            if st.button("✕", key="close_error", help="Закрыть уведомление"):
-                st.session_state.error_message = None
-                st.rerun()
-    
-    # Используем динамический ключ для формы, чтобы очистить поля после успешного добавления
-    with st.form(key=f"add_user_form_{st.session_state.form_key}"):
-        st.write("Введите @username пользователя Telegram")
-        
-        username_input = st.text_input(
-            "Username", 
-            placeholder="@john_doe или john_doe",
-            help="Введите username пользователя Telegram (с @ или без)"
-        )
-        
-        submitted = st.form_submit_button("Добавить пользователя", type="primary")
-        
-        if submitted:
-            if username_input.strip():
-                success, message = add_user(username_input.strip())
-                if success:
-                    # Сохраняем сообщение об успехе и увеличиваем ключ формы для очистки
-                    st.session_state.success_message = message
-                    st.session_state.error_message = None
-                    st.session_state.form_key += 1  # Это приведет к очистке формы
-                    st.rerun()
-                else:
-                    # Сохраняем сообщение об ошибке
-                    st.session_state.error_message = message
-                    st.session_state.success_message = None
-                    st.rerun()
-            else:
-                st.session_state.error_message = "Введите username пользователя!"
-                st.session_state.success_message = None
-                st.rerun()
-
-with tab3:
-    st.subheader("📊 Статистика")
+    st.subheader("📊 Статистика команды")
     
     users_df = load_users()
     if not users_df.empty:
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Всего пользователей", len(users_df))
+            total_users = len(users_df)
+            st.metric("Всего записей", total_users)
         
         with col2:
-            active_users = len(users_df[users_df['is_active'] == 1])
-            st.metric("Активных", active_users)
+            activated_users = len(users_df[users_df['is_verified'] == 1])
+            st.metric("Активированных", activated_users)
         
         with col3:
-            verified_users = len(users_df[users_df['is_verified'] == 1])
-            st.metric("Активированных", verified_users)
+            active_users = len(users_df[(users_df['is_active'] == 1) & (users_df['is_verified'] == 1)])
+            st.metric("Активных", active_users)
         
         with col4:
             responded_today = len(users_df[users_df['has_responded_today'] == 1])
             st.metric("Ответили сегодня", responded_today)
         
-        # График активности
-        if 'created_at' in users_df.columns:
+        # График активности по дням
+        if 'created_at' in users_df.columns and len(users_df) > 0:
             users_df['created_at'] = pd.to_datetime(users_df['created_at'])
-            daily_registrations = users_df.groupby(users_df['created_at'].dt.date).size()
+            daily_activations = users_df[users_df['is_verified'] == 1].groupby(users_df['created_at'].dt.date).size()
             
-            if len(daily_registrations) > 0:
-                st.subheader("📈 Регистрации по дням")
-                st.line_chart(daily_registrations)
+            if len(daily_activations) > 0:
+                st.subheader("📈 Активации по дням")
+                st.line_chart(daily_activations)
+        
+        # Статистика ответов
+        if activated_users > 0:
+            st.subheader("📝 Статистика ответов")
+            response_rate = (responded_today / activated_users) * 100 if activated_users > 0 else 0
+            st.progress(response_rate / 100)
+            st.write(f"Процент ответивших сегодня: {response_rate:.1f}%")
 
 # Боковая панель с информацией
 with st.sidebar:
-    st.header("ℹ️ Информация")
+    st.header("ℹ️ Система управления")
+    
+    st.markdown("### 🔗 Ссылка активации")
+    st.code("https://t.me/aidailytasksBot?start=group_activation")
+    st.caption("Отправьте эту ссылку участникам команды")
+    
     st.write("""
-    **Как это работает:**
+    **Принцип работы:**
     
-    1. 👤 Добавьте пользователей по @username
-    2. 📱 Отправьте ссылку активации пользователю
-    3. 🔗 Пользователь переходит по ссылке и активируется
-    4. 🤖 Бот отправит ему сообщение в 9:00
-    5. ⏳ Ждет ответов от всех пользователей
-    6. 🧠 Gemini создает сводку планов
-    7. 📬 Админ получает общий отчет
+    🏢 **Для администратора:**
+    1. Отправьте ссылку активации участникам
+    2. Следите за активациями в админ панели
+    3. Получайте ежедневные сводки планов
     
-    **Новая система активации:**
-    - Система генерирует уникальную ссылку для каждого пользователя
-    - Ссылка содержит токен активации
-    - При переходе по ссылке пользователь автоматически активируется
-    - Только активированные пользователи получают утренние сообщения
+    👥 **Для участников:**
+    1. Переходят по ссылке от администратора
+    2. Нажимают /start в боте
+    3. Автоматически активируются
+    
+    ⏰ **Ежедневный процесс:**
+    - 9:00 - бот отправляет вопросы участникам
+    - 9:05 - генерация сводки для администратора
     """)
     
     st.divider()
@@ -416,4 +292,4 @@ with st.sidebar:
     if st.button("🔧 Техническая информация"):
         st.info(f"База данных: {DB_PATH}")
         st.info(f"Статус БД: {'✅ Подключена' if DB_PATH.exists() else '❌ Не найдена'}")
-        st.info(f"Бот: @{get_bot_username()}")
+        st.info("Бот: @aidailytasksBot")
