@@ -46,7 +46,11 @@ def run_admin_panel():
     """Запуск админ панели"""
     print("🎛️ Запуск админ панели...")
     try:
-        subprocess.run(["streamlit", "run", "admin_panel/dashboard.py"], check=True)
+        subprocess.run([
+            "streamlit", "run", "admin_panel/dashboard.py",
+            "--server.address", "0.0.0.0",
+            "--server.port", "8501"
+        ], check=True)
     except subprocess.CalledProcessError:
         print("❌ Ошибка запуска админ панели")
     except KeyboardInterrupt:
@@ -107,7 +111,7 @@ def main():
             return 1
             
         print("\n2. Запуск админ панели для настройки...")
-        print("   Откройте http://localhost:8501 в браузере")
+        print("   Откройте http://<ваш_IP>:8501 в браузере (или http://0.0.0.0:8501)")
         print("   Добавьте пользователей и нажмите Ctrl+C когда закончите")
         
         try:

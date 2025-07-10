@@ -15,18 +15,23 @@ def run_process(cmd, name):
 def main():
     try:
         print("Запуск админ панели (Streamlit)...")
-        admin_proc = run_process([sys.executable, '-m', 'streamlit', 'run', 'admin_panel/dashboard.py'], 'admin_panel')
+        admin_proc = run_process([
+            sys.executable,
+            '-m', 'streamlit', 'run', 'admin_panel/dashboard.py',
+            '--server.address', '0.0.0.0',
+            '--server.port', '8501'
+        ], 'admin_panel')
         processes.append(admin_proc)
 
         time.sleep(2)  # Даем админке стартануть
 
         print("Запуск основного приложения (бот + планировщик, с --reload)...")
         main_proc = run_process([
-            sys.executable, '-m', 'uvicorn', 'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8000'
+            sys.executable, '-m', 'uvicorn', 'app.main:app', '--reload', '--host', '0.0.0.0', '--port', '8000'
         ], 'main_app')
         processes.append(main_proc)
 
-        print("\nСистема запущена!\n- Админ панель: http://localhost:8501\n- API/бот: http://127.0.0.1:8000\n")
+        print("\nСистема запущена!\n- Админ панель: http://0.0.0.0:8501 (или http://<ваш_IP>:8501)\n- API/бот: http://0.0.0.0:8000 (или http://<ваш_IP>:8000)\n")
         print("Для остановки нажмите Ctrl+C")
 
         # Ожидание завершения любого процесса
