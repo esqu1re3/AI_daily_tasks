@@ -9,6 +9,7 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import streamlit.components.v1 as components
 
 # Настройки страницы
 st.set_page_config(
@@ -532,6 +533,21 @@ def reset_daily_responses_and_send_messages():
     except Exception as e:
         logger.error(f"Ошибка сброса ответов: {e}")
         return {"success": False, "message": f"Ошибка сброса ответов: {e}", "details": None}
+
+def copy_to_clipboard_button(text: str, button_label: str = "📋 Копировать"):
+    components.html(
+        f"""
+        <button style=\"background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;border-radius:8px;padding:0.4rem 1.2rem;font-weight:500;cursor:pointer;position:relative;overflow:hidden;\"
+                onclick=\"
+                    navigator.clipboard.writeText('{text}');
+                    const btn=this;
+                    const original=btn.innerHTML;
+                    btn.innerHTML='✅ Скопировано!';
+                    setTimeout(()=>btn.innerHTML=original,1500);
+                \">{button_label}</button>
+        """,
+        height=40,
+    )
 
 # Инициализация БД
 if not init_database():

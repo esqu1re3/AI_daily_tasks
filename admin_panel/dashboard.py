@@ -9,6 +9,7 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import streamlit.components.v1 as components
 
 # Настройки страницы
 st.set_page_config(
@@ -414,6 +415,24 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+def copy_to_clipboard_button(text: str, button_label: str = "📋 Копировать"):
+    """Render a copy button that shows a short confirmation message after copying."""
+    components.html(
+        f"""
+        <button style=\"background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;border-radius:8px;padding:0.4rem 1.2rem;font-weight:500;cursor:pointer;position:relative;overflow:hidden;\"
+                onclick=\"
+                    navigator.clipboard.writeText('{text}');
+                    const btn=this;
+                    const original=btn.innerHTML;
+                    btn.innerHTML='✅ Скопировано!';
+                    setTimeout(()=>btn.innerHTML=original,1500);
+                \">
+            {button_label}
+        </button>
+        """,
+        height=40,
+    )
 
 # Путь к базе данных
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -997,8 +1016,7 @@ with tab2:
                                     {activation_url}
                                 </div>
                                 """, unsafe_allow_html=True)
-                                if st.button("📋 Копировать", key=f"copy_{group['id']}", help="Скопировать ссылку"):
-                                    st.write("💡 Скопируйте ссылку выше")
+                                copy_to_clipboard_button(activation_url)
                             
                             # ===== НОВАЯ ФУНКЦИЯ: Редактирование расписания =====
                             with st.expander("⏰ Редактировать расписание"):
