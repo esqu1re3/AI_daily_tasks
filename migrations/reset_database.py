@@ -84,7 +84,7 @@ def create_default_group():
             admin_id=admin_id,
             admin_username="admin",
             admin_full_name="Администратор",
-            morning_hour=9,
+            morning_hour=17,
             morning_minute=30,
             timezone="Asia/Bishkek"
         )

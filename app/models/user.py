@@ -7,13 +7,13 @@ from app.core.database import Base
 class User(Base):
     """Модель пользователя системы AI Daily Tasks.
     
-    Представляет участника команды в системе сбора утренних планов.
+    Представляет участника команды в системе сбора вечерних планов.
     Хранит информацию о пользователе, его статусе активации и ответах на вопросы.
     
     Поддерживает различные этапы жизненного цикла пользователя:
     - Создание записи при первом контакте
     - Активация через ссылку от администратора группы
-    - Ежедневные ответы на утренние вопросы
+    - Ежедневные ответы на вечерние вопросы
     - Управление активностью администратором группы
     
     Attributes:
@@ -25,7 +25,7 @@ class User(Base):
         is_active (bool): Флаг активности пользователя (управляется администратором).
         is_verified (bool): Флаг активации через ссылку (подтверждение участия).
         is_group_member (bool): Флаг принадлежности к команде.
-        last_response (str): Последний ответ на утренний вопрос.
+        last_response (str): Последний ответ на вечерний вопрос.
         has_responded_today (bool): Флаг ответа на сегодняшний вопрос.
         activation_token (str): Токен для активации через ссылку.
         group_id (int): Идентификатор группы, к которой принадлежит пользователь.
@@ -42,7 +42,7 @@ class User(Base):
         ...     is_group_member=True,
         ...     group_id=1
         ... )
-        >>> # Пользователь готов получать утренние вопросы
+        >>> # Пользователь готов получать вечерние вопросы
     """
     __tablename__ = "users"
 
@@ -54,7 +54,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)  # подтвержден ли пользователь (активирован ли)
     is_group_member = Column(Boolean, default=True)  # является ли участником группы
-    last_response = Column(String, nullable=True)  # последний ответ на утренний вопрос
+    last_response = Column(String, nullable=True)  # последний ответ на вечерний вопрос
     has_responded_today = Column(Boolean, default=False)  # ответил ли сегодня
     activation_token = Column(String, nullable=True, index=True)  # токен для активации через диплинк
     response_retry_count = Column(Integer, default=0)  # количество попыток переписать ответ сегодня

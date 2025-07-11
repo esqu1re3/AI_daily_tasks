@@ -7,8 +7,8 @@ class GroupBase(BaseModel):
     """Базовая схема группы"""
     name: str = Field(..., min_length=1, max_length=100, description="Название группы")
     description: Optional[str] = Field(None, description="Описание группы")
-    morning_hour: int = Field(9, ge=0, le=23, description="Час отправки утренних сообщений (0-23)")
-    morning_minute: int = Field(30, ge=0, le=59, description="Минута отправки утренних сообщений (0-59)")
+    morning_hour: int = Field(9, ge=0, le=23, description="Час отправки вечерних сообщений (0-23)")
+    morning_minute: int = Field(30, ge=0, le=59, description="Минута отправки вечерних сообщений (0-59)")
     timezone: str = Field("Asia/Bishkek", description="Временная зона группы")
 
 
@@ -23,8 +23,8 @@ class GroupUpdate(BaseModel):
     """Схема для обновления группы"""
     name: Optional[str] = Field(None, min_length=1, max_length=100, description="Название группы")
     description: Optional[str] = Field(None, description="Описание группы")
-    morning_hour: Optional[int] = Field(None, ge=0, le=23, description="Час отправки утренних сообщений")
-    morning_minute: Optional[int] = Field(None, ge=0, le=59, description="Минута отправки утренних сообщений")
+    morning_hour: Optional[int] = Field(None, ge=0, le=23, description="Час отправки вечерних сообщений")
+    morning_minute: Optional[int] = Field(None, ge=0, le=59, description="Минута отправки вечерних сообщений")
     timezone: Optional[str] = Field(None, description="Временная зона группы")
     is_active: Optional[bool] = Field(None, description="Активность группы")
 

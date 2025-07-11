@@ -276,8 +276,8 @@ async def join_group_by_token(
 @router.put("/{group_id}/schedule", response_model=GroupResponse)
 async def update_group_schedule(
     group_id: int,
-    morning_hour: int = Query(..., ge=0, le=23, description="Час отправки утренних сообщений (0-23)"),
-    morning_minute: int = Query(..., ge=0, le=59, description="Минута отправки утренних сообщений (0-59)"),
+    morning_hour: int = Query(..., ge=0, le=23, description="Час отправки вечерних сообщений (0-23)"),
+    morning_minute: int = Query(..., ge=0, le=59, description="Минута отправки вечерних сообщений (0-59)"),
     timezone: str = Query("Asia/Bishkek", description="Временная зона группы"),
     db: Session = Depends(get_db)
 ):

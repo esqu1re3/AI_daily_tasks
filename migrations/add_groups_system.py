@@ -51,7 +51,7 @@ def create_groups_table():
                 activation_token TEXT UNIQUE NOT NULL,
                 is_active BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                morning_hour INTEGER DEFAULT 9,
+                morning_hour INTEGER DEFAULT 17,
                 morning_minute INTEGER DEFAULT 30,
                 timezone TEXT DEFAULT 'Asia/Bishkek'
             )

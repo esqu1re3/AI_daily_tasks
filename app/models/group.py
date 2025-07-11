@@ -28,8 +28,8 @@ class Group(Base):
         activation_token (str): Уникальный токен для активации участников.
         is_active (bool): Флаг активности группы.
         created_at (datetime): Дата создания группы.
-        morning_hour (int): Час отправки утренних сообщений (по умолчанию 9).
-        morning_minute (int): Минута отправки утренних сообщений (по умолчанию 30).
+        morning_hour (int): Час отправки вечерних сообщений (по умолчанию 17).
+        morning_minute (int): Минута отправки вечерних сообщений (по умолчанию 30).
         timezone (str): Временная зона группы (по умолчанию Asia/Bishkek).
         members: Связь с участниками группы.
     
@@ -63,7 +63,7 @@ class Group(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Настройки времени рассылки
-    morning_hour = Column(Integer, default=9)  # Час рассылки (0-23)
+    morning_hour = Column(Integer, default=17)  # Час рассылки (0-23)
     morning_minute = Column(Integer, default=30)  # Минута рассылки (0-59)
     timezone = Column(String, default="Asia/Bishkek")  # Временная зона
     
