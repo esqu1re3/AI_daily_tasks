@@ -99,6 +99,11 @@ async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
     db.refresh(new_group)
     
     new_group.members_count = 0
+
+    # Restart scheduler to add the new group's schedule
+    from app.services.scheduler import start_scheduler
+    start_scheduler()
+
     return new_group
 
 

@@ -158,7 +158,9 @@ def main():
             '-m', 'streamlit', 'run', 'admin_panel/dashboard.py',
             '--server.address', '0.0.0.0',
             '--server.port', '8501',
-            '--server.headless', 'true'
+            '--server.headless', 'true',
+            '--server.runOnSave', 'false',
+            '--browser.gatherUsageStats', 'false'
         ], 'admin_panel')
         processes.append(admin_proc)
 

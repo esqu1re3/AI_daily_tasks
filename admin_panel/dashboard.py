@@ -578,7 +578,7 @@ def delete_user(user_id):
         logger.error(f"Ошибка удаления пользователя: {e}")
         return False
 
-def get_user_responses_history(user_id, limit=10):
+def get_user_responses_history(user_id, limit=20):
     """Получение истории ответов пользователя через API"""
     try:
         response = requests.get(
@@ -781,33 +781,17 @@ with tab1:
                         # ===== НОВАЯ ФУНКЦИЯ: История ответов =====
                         with st.expander("📊 История ответов"):
                             with st.spinner("Загрузка истории..."):
-                                history = get_user_responses_history(user['id'], limit=5)
+                                history = get_user_responses_history(user['id'], limit=20)
                             
                             if history:
                                 st.markdown(f"**Всего ответов:** {len(history)}")
                                 for i, response in enumerate(history):
                                     created_at = pd.to_datetime(response['created_at']).strftime('%d.%m.%Y %H:%M')
-                                    preview = response['response_text_preview']
-                                    
-                                    st.markdown(f"""
-                                    <div style="
-                                        background: var(--surface-color);
-                                        padding: 0.75rem;
-                                        border-radius: 8px;
-                                        margin: 0.5rem 0;
-                                        border-left: 3px solid var(--primary-color);
-                                    ">
-                                        <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.25rem;">
-                                            {created_at}
-                                        </div>
-                                        <div style="color: var(--text-primary); font-size: 0.9rem;">
-                                            {preview}
-                                        </div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
+                                    with st.expander(f"📅 {created_at}"):
+                                        st.text(response['response_text'])
                                 
                                 # Ссылка на полную историю (можно будет добавить в будущем)
-                                st.markdown('<p style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; margin-top: 1rem;">💡 Показаны последние 5 ответов</p>', unsafe_allow_html=True)
+                                st.markdown('<p style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; margin-top: 1rem;">💡 Показаны последние 20 ответов</p>', unsafe_allow_html=True)
                             else:
                                 st.info("История ответов пуста")
                         # ===== КОНЕЦ НОВОЙ ФУНКЦИИ =====

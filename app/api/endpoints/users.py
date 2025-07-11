@@ -491,23 +491,18 @@ def get_user_responses(
         # Получаем ответы пользователя с пагинацией
         responses = db.query(UserResponse).filter(
             UserResponse.user_id == user_id
-        ).order_by(desc(UserResponse.created_at)).offset(skip).limit(limit).all()
+        ).order_by(UserResponse.created_at.desc()).offset(skip).limit(limit).all()
         
-        # Преобразуем в сокращенный формат для списка
-        result = []
-        for response in responses:
-            preview_text = response.response_text[:100] + "..." if len(response.response_text) > 100 else response.response_text
-            
-            result.append(UserResponseListItem(
+        return [
+            UserResponseListItem(
                 id=response.id,
                 user_id=response.user_id,
-                response_text_preview=preview_text,
+                response_text=response.response_text,
                 created_at=response.created_at,
                 telegram_username=response.telegram_username,
                 full_name=response.full_name
-            ))
-        
-        return result
+            ) for response in responses
+        ]
         
     except Exception as e:
         logger.error(f"Ошибка получения истории ответов пользователя {user_id}: {e}")

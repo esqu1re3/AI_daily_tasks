@@ -89,86 +89,12 @@ def create_groups_table():
             conn.close()
 
 def create_default_group():
-    """Создание группы по умолчанию для существующих пользователей"""
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        # Проверяем, есть ли уже группы
-        cursor.execute("SELECT COUNT(*) FROM groups")
-        groups_count = cursor.fetchone()[0]
-        
-        if groups_count > 0:
-            logger.info("✅ Группы уже существуют, пропускаем создание группы по умолчанию")
-            return True
-        
-        # Проверяем, есть ли пользователи без группы
-        cursor.execute("SELECT COUNT(*) FROM users WHERE is_verified = 1 AND group_id IS NULL")
-        users_without_group = cursor.fetchone()[0]
-        
-        if users_without_group == 0:
-            logger.info("✅ Нет пользователей без группы")
-            return True
-        
-        # Получаем первого активированного пользователя как админа по умолчанию
-        cursor.execute("""
-        SELECT user_id, username, full_name 
-        FROM users 
-        WHERE is_verified = 1 
-        ORDER BY created_at ASC 
-        LIMIT 1
-        """)
-        first_user = cursor.fetchone()
-        
-        if not first_user:
-            logger.info("✅ Нет активированных пользователей для создания группы по умолчанию")
-            return True
-        
-        # Создаем группу по умолчанию
-        default_token = secrets.token_urlsafe(32)
-        logger.info("📊 Создание группы по умолчанию...")
-        
-        cursor.execute("""
-        INSERT INTO groups (
-            name, description, admin_id, admin_username, admin_full_name, 
-            activation_token, is_active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-        """, (
-            "Основная команда",
-            "Группа по умолчанию для существующих пользователей",
-            first_user[0],  # user_id
-            first_user[1],  # username
-            first_user[2],  # full_name
-            default_token,
-            datetime.utcnow()
-        ))
-        
-        default_group_id = cursor.lastrowid
-        
-        # Назначаем всех активированных пользователей в группу по умолчанию
-        cursor.execute("""
-        UPDATE users 
-        SET group_id = ? 
-        WHERE is_verified = 1 AND group_id IS NULL
-        """, (default_group_id,))
-        
-        updated_users = cursor.rowcount
-        conn.commit()
-        
-        logger.info(f"✅ Создана группа по умолчанию (ID: {default_group_id})")
-        logger.info(f"✅ Назначено пользователей в группу: {updated_users}")
-        
-        return True
-        
-    except sqlite3.Error as e:
-        logger.error(f"❌ Ошибка создания группы по умолчанию: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if conn:
-            conn.close()
+    """Создание группы по умолчанию для существующих пользователей (отключено)"""
+    # ОТКЛЮЧЕНО: больше не создаем группу "Основная команда" автоматически
+    # Администратор должен создать группы самостоятельно через админ-панель
+    logger.info("✅ Автоматическое создание группы по умолчанию отключено")
+    logger.info("💡 Создайте группы через админ-панель: вкладка 'Группы' → 'Создать новую группу'")
+    return True
 
 def print_migration_results():
     """Выводим результаты миграции"""

@@ -24,7 +24,7 @@ class UserResponseListItem(BaseModel):
     """Сокращенная схема для списков (без полного текста)"""
     id: int
     user_id: int
-    response_text_preview: str  # Первые 100 символов
+    response_text: str  # Полный текст ответа
     created_at: datetime
     telegram_username: Optional[str] = None
     full_name: Optional[str] = None

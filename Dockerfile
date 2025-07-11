@@ -36,7 +36,7 @@ RUN python migrations/init_users.py
 RUN echo '#!/bin/bash\n\
 echo "🚀 Запуск AI Daily Tasks в Docker..."\n\
 echo "🎛️ Запуск админ панели..."\n\
-streamlit run admin_panel/dashboard.py --server.address 0.0.0.0 --server.port 8501 &\n\
+streamlit run admin_panel/dashboard.py --server.address 0.0.0.0 --server.port 8501 --server.headless true --server.runOnSave false --browser.gatherUsageStats false &\n\
 echo "🤖 Запуск основного приложения..."\n\
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &\n\
 echo "✅ Система запущена!"\n\
