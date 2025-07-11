@@ -153,6 +153,61 @@ st.markdown("""
         box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
     }
     
+    /* Улучшения для форм */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div {
+        background: var(--surface-color) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 8px !important;
+        color: var(--text-primary) !important;
+        font-size: 0.95rem !important;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: var(--primary-color) !important;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2) !important;
+    }
+    
+    /* Улучшенные экспандеры */
+    .streamlit-expanderHeader {
+        background: var(--surface-color) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 8px !important;
+        color: var(--text-primary) !important;
+        font-weight: 500 !important;
+    }
+    
+    .streamlit-expanderHeader:hover {
+        border-color: var(--primary-color) !important;
+        background: linear-gradient(135deg, var(--surface-color) 0%, var(--card-color) 100%) !important;
+    }
+    
+    .streamlit-expanderContent {
+        background: var(--card-color) !important;
+        border: 1px solid var(--border-color) !important;
+        border-top: none !important;
+        border-radius: 0 0 8px 8px !important;
+        padding: 1rem !important;
+    }
+    
+    /* Компактные кнопки действий */
+    .stButton[data-testid="baseButton-secondary"] > button {
+        background: var(--surface-color) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border-color) !important;
+        padding: 0.4rem 0.8rem !important;
+        font-size: 0.9rem !important;
+        min-height: 2.5rem !important;
+    }
+    
+    .stButton[data-testid="baseButton-secondary"] > button:hover {
+        border-color: var(--primary-color) !important;
+        background: var(--primary-color) !important;
+        color: white !important;
+    }
+    
     /* Пользовательские карточки */
     .user-card {
         background: var(--card-color);
@@ -260,13 +315,6 @@ st.markdown("""
         border-radius: 10px;
     }
     
-    /* Экспандеры */
-    .streamlit-expanderHeader {
-        background: var(--surface-color);
-        border-radius: 8px;
-        border: 1px solid var(--border-color);
-    }
-    
     /* Датафреймы */
     .stDataFrame {
         border-radius: var(--radius);
@@ -283,6 +331,37 @@ st.markdown("""
     /* Спиннер */
     .stSpinner > div {
         border-top-color: var(--primary-color) !important;
+    }
+    
+    /* Чекбоксы */
+    .stCheckbox > label {
+        color: var(--text-primary) !important;
+        font-weight: 500 !important;
+    }
+    
+    .stCheckbox input[type="checkbox"] {
+        accent-color: var(--primary-color) !important;
+    }
+    
+    /* Улучшения для мобильных устройств */
+    @media (max-width: 768px) {
+        .main-title {
+            font-size: 2rem;
+        }
+        
+        .metric-card, .user-card {
+            margin: 0.25rem 0;
+            padding: 1rem;
+        }
+        
+        .info-panel {
+            padding: 1.5rem;
+        }
+        
+        .stButton > button {
+            padding: 0.4rem 1rem;
+            font-size: 0.9rem;
+        }
     }
     
     /* Уведомления */
@@ -377,22 +456,6 @@ st.markdown("""
     
     .notification-exit {
         animation: slideOutUp 0.3s ease-in;
-    }
-    
-    /* Адаптивность */
-    @media (max-width: 768px) {
-        .main-title {
-            font-size: 2rem;
-        }
-        
-        .metric-card, .user-card {
-            margin: 0.25rem 0;
-            padding: 1rem;
-        }
-        
-        .info-panel {
-            padding: 1.5rem;
-        }
     }
     
     /* Анимации */
@@ -829,10 +892,8 @@ with tab2:
                         col1, col2 = st.columns(2)
                         with col1:
                             group_name = st.text_input("Название группы", placeholder="Например: Команда разработки")
-                            admin_id = st.text_input("Telegram ID администратора", placeholder="123456789")
                             admin_username = st.text_input("Username администратора (без @)", placeholder="admin_user")
                         with col2:
-                            admin_full_name = st.text_input("Полное имя администратора", placeholder="Иван Иванов")
                             morning_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
                             minutes_options = list(range(0, 60, 5))
                             morning_minute = st.selectbox("Минута рассылки", options=minutes_options, index=minutes_options.index(30))
@@ -842,13 +903,11 @@ with tab2:
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.form_submit_button("✅ Создать группу", type="primary", use_container_width=True):
-                                if group_name and admin_id:
+                                if group_name and admin_username and admin_username.strip():
                                     group_data = {
                                         "name": group_name,
                                         "description": description if description else None,
-                                        "admin_id": admin_id,
-                                        "admin_username": admin_username if admin_username else None,
-                                        "admin_full_name": admin_full_name if admin_full_name else None,
+                                        "admin_username": admin_username.strip(),
                                         "morning_hour": morning_hour,
                                         "morning_minute": morning_minute
                                     }
@@ -869,7 +928,7 @@ with tab2:
                                     except Exception as e:
                                         st.error(f"❌ Ошибка подключения к API: {e}")
                                 else:
-                                    st.error("❌ Пожалуйста, заполните название группы и ID администратора")
+                                    st.error("❌ Пожалуйста, заполните название группы и username администратора")
                         with col2:
                             if st.form_submit_button("❌ Отмена", use_container_width=True):
                                 st.session_state.show_create_group = False
@@ -977,7 +1036,7 @@ with tab2:
                 
                 for group in groups_data:
                     with st.container():
-                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                        col1, col2, col3, col4 = st.columns([4, 3, 3, 2])
                         
                         with col1:
                             status_icon = "✅" if group['is_active'] else "❌"
@@ -997,7 +1056,7 @@ with tab2:
                             """, unsafe_allow_html=True)
                         
                         with col2:
-                            admin_name = group['admin_full_name'] or group['admin_username'] or f"ID:{group['admin_id']}"
+                            admin_name = f"@{group['admin_username']}" if group['admin_username'] else "Не указан"
                             schedule_time = f"{group['morning_hour']:02d}:{group['morning_minute']:02d}"
                             
                             st.markdown(f"""
@@ -1069,48 +1128,90 @@ with tab2:
                                         except Exception as e:
                                             st.error(f"❌ Ошибка подключения к API: {e}")
                             # ===== КОНЕЦ НОВОЙ ФУНКЦИИ =====
+
+                            # ===== НОВАЯ ФУНКЦИЯ: Редактирование данных группы =====
+                            with st.expander("✏️ Редактировать группу"):
+                                with st.form(f"edit_group_form_{group['id']}"):
+                                    new_name = st.text_input("Название группы", value=group['name'], key=f"edit_name_{group['id']}")
+                                    new_admin_username = st.text_input("Username администратора (без @)", value=group['admin_username'] or "", key=f"edit_admin_{group['id']}")
+                                    new_desc = st.text_area("Описание", value=group['description'] or "", key=f"edit_desc_{group['id']}", height=70)
+                                    is_active_checkbox = st.checkbox("Группа активна", value=group['is_active'], key=f"edit_active_{group['id']}")
+
+                                    if st.form_submit_button("💾 Сохранить изменения", type="primary", use_container_width=True):
+                                        payload = {}
+                                        if new_name.strip() and new_name != group['name']:
+                                            payload['name'] = new_name.strip()
+                                        # Позволяем очистить описание, отправляя None
+                                        if new_desc != (group['description'] or ""):
+                                            payload['description'] = new_desc.strip() if new_desc.strip() else None
+                                        if new_admin_username.strip() and new_admin_username.strip() != group['admin_username']:
+                                            payload['admin_username'] = new_admin_username.strip()
+                                        if is_active_checkbox != group['is_active']:
+                                            payload['is_active'] = is_active_checkbox
+
+                                        if payload:
+                                            try:
+                                                edit_resp = requests.put(
+                                                    f"http://localhost:8000/api/groups/{group['id']}",
+                                                    json=payload,
+                                                    timeout=10
+                                                )
+                                                if edit_resp.status_code == 200:
+                                                    success_placeholder = st.success("✅ Группа обновлена!")
+                                                    time.sleep(1.5)
+                                                    success_placeholder.empty()
+                                                    st.rerun()
+                                                else:
+                                                    error_data = edit_resp.json()
+                                                    st.error(f"❌ Ошибка обновления группы: {error_data.get('detail', 'Неизвестная ошибка')}")
+                                            except Exception as e:
+                                                st.error(f"❌ Ошибка подключения к API: {e}")
+                                            else:
+                                                st.info("Изменения не внесены")
+                            # ===== КОНЕЦ ФУНКЦИИ РЕДАКТИРОВАНИЯ ГРУППЫ =====
                         
-                        with col4:
-                            col4a, col4b, col4c = st.columns(3)
-                            
-                            with col4a:
-                                if st.button("📊", key=f"stats_{group['id']}", help="Статистика группы"):
-                                    try:
-                                        stats_response = requests.get(f"http://localhost:8000/api/groups/{group['id']}/stats", timeout=10)
-                                        if stats_response.status_code == 200:
-                                            stats_data = stats_response.json()
-                                            st.json(stats_data)
-                                    except Exception as e:
-                                        st.error(f"Ошибка получения статистики: {e}")
-                            
-                            with col4b:
-                                if st.button("🔄", key=f"regen_{group['id']}", help="Перегенерировать токен"):
-                                    try:
-                                        regen_response = requests.post(f"http://localhost:8000/api/groups/{group['id']}/regenerate-token", timeout=10)
-                                        if regen_response.status_code == 200:
-                                            st.success("✅ Токен обновлен!")
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Ошибка обновления токена")
-                                    except Exception as e:
-                                        st.error(f"❌ Ошибка: {e}")
-                            
-                            with col4c:
-                                if group['is_active']:
-                                    if st.button("❌", key=f"deactivate_{group['id']}", help="Деактивировать группу"):
+                            with col4:
+                                # Компактные кнопки действий в одну строку
+                                action_col1, action_col2, action_col3 = st.columns(3)
+                                
+                                with action_col1:
+                                    if st.button("📊", key=f"stats_{group['id']}", help="Статистика группы", use_container_width=True):
                                         try:
-                                            del_response = requests.delete(f"http://localhost:8000/api/groups/{group['id']}", timeout=10)
-                                            if del_response.status_code == 204:
-                                                st.success("✅ Группа деактивирована!")
+                                            stats_response = requests.get(f"http://localhost:8000/api/groups/{group['id']}/stats", timeout=10)
+                                            if stats_response.status_code == 200:
+                                                stats_data = stats_response.json()
+                                                st.json(stats_data)
+                                        except Exception as e:
+                                            st.error(f"Ошибка получения статистики: {e}")
+                                
+                                with action_col2:
+                                    if st.button("🔄", key=f"regen_{group['id']}", help="Перегенерировать токен", use_container_width=True):
+                                        try:
+                                            regen_response = requests.post(f"http://localhost:8000/api/groups/{group['id']}/regenerate-token", timeout=10)
+                                            if regen_response.status_code == 200:
+                                                st.success("✅ Токен обновлен!")
                                                 st.rerun()
                                             else:
-                                                st.error("❌ Ошибка деактивации")
+                                                st.error("❌ Ошибка обновления токена")
                                         except Exception as e:
                                             st.error(f"❌ Ошибка: {e}")
-                                else:
-                                    st.markdown("⚪", help="Группа деактивирована")
-                        
-                        st.markdown("---")
+                                
+                                with action_col3:
+                                    if group['is_active']:
+                                        if st.button("❌", key=f"deactivate_{group['id']}", help="Деактивировать группу", use_container_width=True):
+                                            try:
+                                                del_response = requests.delete(f"http://localhost:8000/api/groups/{group['id']}", timeout=10)
+                                                if del_response.status_code == 204:
+                                                    st.success("✅ Группа деактивирована!")
+                                                    st.rerun()
+                                                else:
+                                                    st.error("❌ Ошибка деактивации")
+                                            except Exception as e:
+                                                st.error(f"❌ Ошибка: {e}")
+                                    else:
+                                        st.markdown("⚪", help="Группа деактивирована")
+                            
+                            st.markdown("---")
             else:
                 st.markdown("""
                 <div class="metric-card" style="text-align: center; padding: 3rem;">

@@ -266,11 +266,19 @@ def generate_and_send_summary_for_group(group, users):
         >>> generate_and_send_summary_for_group(group, users)
         # Сводка будет сгенерирована и отправлена админу группы
     """
-    if not group.admin_id:
-        logger.error(f"У группы '{group.name}' (ID: {group.id}) не настроен admin_id, не могу отправить сводку")
+    if not group.admin_username:
+        logger.error(f"У группы '{group.name}' (ID: {group.id}) не настроен admin_username, не могу отправить сводку")
         return
     
+    # Создаем сессию БД для поиска администратора
+    db = SessionLocal()
     try:
+        # Находим администратора группы по username
+        from app.models.user import User
+        admin_user = db.query(User).filter(User.username == group.admin_username).first()
+        if not admin_user or not admin_user.user_id:
+            logger.error(f"Не найден пользователь с username '{group.admin_username}' для группы '{group.name}' (ID: {group.id})")
+            return
         # Собираем все ответы
         responses = []
         responded_users = []
@@ -359,21 +367,23 @@ def generate_and_send_summary_for_group(group, users):
                 parts = [admin_message[i:i+4000] for i in range(0, len(admin_message), 4000)]
                 for i, part in enumerate(parts):
                     if i == 0:
-                        bot.send_message(chat_id=int(group.admin_id), text=part)
+                        bot.send_message(chat_id=int(admin_user.user_id), text=part)
                     else:
-                        bot.send_message(chat_id=int(group.admin_id), text=f"(продолжение {i+1})\n{part}")
+                        bot.send_message(chat_id=int(admin_user.user_id), text=f"(продолжение {i+1})\n{part}")
             else:
-                bot.send_message(chat_id=int(group.admin_id), text=admin_message)
+                bot.send_message(chat_id=int(admin_user.user_id), text=admin_message)
             
-            admin_name = group.admin_full_name or group.admin_username or f"ID:{group.admin_id}"
-            logger.info(f"Сводка группы '{group.name}' успешно отправлена администратору {admin_name}")
+            admin_display_name = admin_user.full_name or f"@{group.admin_username}"
+            logger.info(f"Сводка группы '{group.name}' успешно отправлена администратору {admin_display_name}")
             
         except Exception as e:
-            admin_name = group.admin_full_name or group.admin_username or f"ID:{group.admin_id}"
-            logger.error(f"Ошибка отправки сводки группы '{group.name}' администратору {admin_name}: {e}")
+            admin_display_name = admin_user.full_name or f"@{group.admin_username}"
+            logger.error(f"Ошибка отправки сводки группы '{group.name}' администратору {admin_display_name}: {e}")
             
     except Exception as e:
         logger.error(f"Ошибка генерации сводки группы '{group.name}': {e}")
+    finally:
+        db.close()
 
 def generate_and_send_summary(users):
     """Генерирует сводку планов команды через Gemini AI (legacy-функция для обратной совместимости).

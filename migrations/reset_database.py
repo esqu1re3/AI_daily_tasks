@@ -73,17 +73,10 @@ def create_default_group():
             return True
         
         # Создаем группу по умолчанию
-        admin_id = getattr(settings, 'ADMIN_ID', None)
-        if not admin_id:
-            print("⚠️ ADMIN_ID не настроен в .env, создаем группу с временным админом")
-            admin_id = "000000000"  # Временный ID
-        
         default_group = Group(
             name="Основная команда",
             description="Группа по умолчанию для существующих пользователей",
-            admin_id=admin_id,
-            admin_username="admin",
-            admin_full_name="Администратор",
+            admin_username="admin_default",
             morning_hour=17,
             morning_minute=30,
             timezone="Asia/Bishkek"
@@ -131,7 +124,7 @@ def print_database_info():
             groups = db.query(Group).all()
             for group in groups:
                 print(f"   • {group.name} (ID: {group.id})")
-                print(f"     Администратор: {group.admin_full_name or group.admin_username or group.admin_id}")
+                print(f"     Администратор: @{group.admin_username}")
                 print(f"     Расписание: {group.morning_hour:02d}:{group.morning_minute:02d} ({group.timezone})")
                 print(f"     Ссылка активации: https://t.me/YOUR_BOT?start={group.activation_token}")
         

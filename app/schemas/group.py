@@ -14,15 +14,14 @@ class GroupBase(BaseModel):
 
 class GroupCreate(GroupBase):
     """Схема для создания группы"""
-    admin_id: str = Field(..., description="Telegram User ID администратора")
-    admin_username: Optional[str] = Field(None, description="Telegram username администратора")
-    admin_full_name: Optional[str] = Field(None, description="Полное имя администратора")
+    admin_username: str = Field(..., min_length=1, description="Telegram username администратора (без @)")
 
 
 class GroupUpdate(BaseModel):
     """Схема для обновления группы"""
     name: Optional[str] = Field(None, min_length=1, max_length=100, description="Название группы")
     description: Optional[str] = Field(None, description="Описание группы")
+    admin_username: Optional[str] = Field(None, min_length=1, description="Telegram username администратора (без @)")
     morning_hour: Optional[int] = Field(None, ge=0, le=23, description="Час отправки вечерних сообщений")
     morning_minute: Optional[int] = Field(None, ge=0, le=59, description="Минута отправки вечерних сообщений")
     timezone: Optional[str] = Field(None, description="Временная зона группы")
@@ -32,9 +31,7 @@ class GroupUpdate(BaseModel):
 class GroupResponse(GroupBase):
     """Схема ответа с информацией о группе"""
     id: int
-    admin_id: str
-    admin_username: Optional[str]
-    admin_full_name: Optional[str]
+    admin_username: str
     activation_token: str
     is_active: bool
     created_at: datetime

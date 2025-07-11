@@ -66,12 +66,19 @@ async def get_group(group_id: int, db: Session = Depends(get_db)):
 async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
     """Создать новую группу"""
     
-    # Проверяем, что пользователь существует
-    admin_user = db.query(User).filter(User.user_id == group_data.admin_id).first()
-    if not admin_user:
+    # Проверяем, что admin_username указан и не пустой
+    if not group_data.admin_username or not group_data.admin_username.strip():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пользователь-администратор не найден"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать username администратора"
+        )
+    
+    # Очищаем username от символа @, если он присутствует
+    clean_username = group_data.admin_username.strip().lstrip('@')
+    if not clean_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username администратора не может быть пустым"
         )
     
     # Проверяем уникальность названия группы
@@ -83,7 +90,10 @@ async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
         )
     
     # Создаем новую группу
-    new_group = Group(**group_data.model_dump())
+    group_dict = group_data.model_dump()
+    group_dict['admin_username'] = clean_username  # Используем очищенный username
+    
+    new_group = Group(**group_dict)
     db.add(new_group)
     db.commit()
     db.refresh(new_group)
@@ -118,8 +128,18 @@ async def update_group(
                 detail="Группа с таким названием уже существует"
             )
     
-    # Обновляем поля группы
-    update_data = group_data.model_dump(exclude_unset=True)
+    # Обрабатываем admin_username (если меняется)
+    if group_data.admin_username:
+        clean_username = group_data.admin_username.strip().lstrip('@')
+        if not clean_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username администратора не может быть пустым"
+            )
+        group.admin_username = clean_username
+    
+    # Обновляем остальные поля группы
+    update_data = group_data.model_dump(exclude_unset=True, exclude={'admin_username'})
     for field, value in update_data.items():
         setattr(group, field, value)
     

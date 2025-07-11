@@ -13,7 +13,7 @@ class Group(Base):
     
     Каждая группа имеет:
     - Уникальное название и описание
-    - Собственного администратора
+    - Собственного администратора (по Telegram username)
     - Уникальный токен активации для участников
     - Настройки времени рассылки
     - Независимую систему сбора ответов и генерации сводок
@@ -22,9 +22,7 @@ class Group(Base):
         id (int): Уникальный идентификатор группы.
         name (str): Название группы/команды.
         description (str): Описание группы.
-        admin_id (str): Telegram User ID администратора группы.
-        admin_username (str): Telegram username администратора.
-        admin_full_name (str): Полное имя администратора.
+        admin_username (str): Telegram username администратора группы.
         activation_token (str): Уникальный токен для активации участников.
         is_active (bool): Флаг активности группы.
         created_at (datetime): Дата создания группы.
@@ -38,9 +36,7 @@ class Group(Base):
         >>> group = Group(
         ...     name="Команда разработки",
         ...     description="Команда разработчиков проекта X",
-        ...     admin_id="123456789",
-        ...     admin_username="team_lead",
-        ...     admin_full_name="John Smith"
+        ...     admin_username="team_lead"
         ... )
         >>> # Группа создана с автоматически сгенерированным токеном
     """
@@ -51,9 +47,7 @@ class Group(Base):
     description = Column(Text, nullable=True)  # Описание группы
     
     # Информация об администраторе группы
-    admin_id = Column(String, nullable=False)  # Telegram User ID администратора
-    admin_username = Column(String, nullable=True)  # Telegram username администратора
-    admin_full_name = Column(String, nullable=True)  # Полное имя администратора
+    admin_username = Column(String, nullable=False)  # Telegram username администратора (обязательное поле)
     
     # Уникальный токен для активации участников
     activation_token = Column(String, unique=True, nullable=False, index=True)
@@ -100,7 +94,7 @@ class Group(Base):
             str: Готовая ссылка для отправки участникам.
         
         Examples:
-            >>> group = Group(name="My Team")
+            >>> group = Group(name="My Team", admin_username="admin")
             >>> link = group.get_activation_link("my_bot")
             >>> print(link)
             https://t.me/my_bot?start=abc123...
@@ -114,7 +108,7 @@ class Group(Base):
             dict: Параметры для APScheduler с временем рассылки группы.
         
         Examples:
-            >>> group = Group(morning_hour=10, morning_minute=15)
+            >>> group = Group(morning_hour=10, morning_minute=15, admin_username="admin")
             >>> cron = group.get_schedule_cron()
             >>> print(cron)
             {'hour': 10, 'minute': 15, 'timezone': 'Asia/Bishkek'}
@@ -126,4 +120,4 @@ class Group(Base):
         }
 
     def __repr__(self):
-        return f"<Group(id={self.id}, name='{self.name}', admin_id='{self.admin_id}', active={self.is_active})>" 
+        return f"<Group(id={self.id}, name='{self.name}', admin_username='{self.admin_username}', active={self.is_active})>" 
