@@ -1,12 +1,15 @@
 # CRUD-доступ к сотрудникам
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from typing import List
 import logging
 from app.config import settings
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.models.user_response import UserResponse
+from app.schemas.user import UserCreate, UserResponse as UserSchema, UserUpdate
+from app.schemas.user_response import UserResponseResponse, UserResponseListItem
 
 router = APIRouter(
     tags=["users"],
@@ -41,7 +44,7 @@ def get_bot_username():
         logger.error(f"Ошибка получения username бота: {e}")
         return "your_bot"  # fallback
 
-@router.post("/", response_model=UserResponse, status_code=201)
+@router.post("/", response_model=UserSchema, status_code=201)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
     """Создает нового пользователя в системе.
     
@@ -87,7 +90,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         logger.error(f"Error creating user: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/", response_model=List[UserResponse])
+@router.get("/", response_model=List[UserSchema])
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """Получает список пользователей с пагинацией.
     
@@ -119,7 +122,7 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
         logger.error(f"Error fetching users: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/{user_id}", response_model=UserResponse)
+@router.get("/{user_id}", response_model=UserSchema)
 def read_user(user_id: int, db: Session = Depends(get_db)):
     """Получает пользователя по его ID.
     
@@ -149,7 +152,7 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error fetching user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/by-username/{username}", response_model=UserResponse)
+@router.get("/by-username/{username}", response_model=UserSchema)
 def read_user_by_username(username: str, db: Session = Depends(get_db)):
     """Получает пользователя по username.
     
@@ -179,7 +182,7 @@ def read_user_by_username(username: str, db: Session = Depends(get_db)):
         logger.error(f"Error fetching user {username}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.put("/{user_id}", response_model=UserResponse)
+@router.put("/{user_id}", response_model=UserSchema)
 def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
     """Обновляет данные пользователя.
     
@@ -408,3 +411,203 @@ def get_scheduler_status():
     except Exception as e:
         logger.error(f"Ошибка API получения информации о планировщике: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения информации о планировщике: {str(e)}")
+
+
+@router.post("/scheduler/restart", status_code=200)
+def restart_scheduler():
+    """Перезапускает планировщик для применения изменений в расписании.
+    
+    Эндпоинт для перезапуска планировщика из админ панели.
+    Полезен после изменения расписания групп для немедленного применения изменений.
+    
+    Returns:
+        dict: Результат перезапуска планировщика.
+    
+    Raises:
+        HTTPException: 500 при ошибках перезапуска планировщика.
+    
+    Examples:
+        >>> # POST /users/scheduler/restart
+        >>> # Response: {"success": true, "message": "Планировщик перезапущен", "jobs_count": 3}
+    """
+    try:
+        from app.services.scheduler import start_scheduler, get_scheduler_info
+        
+        logger.info("Запуск перезапуска планировщика через API")
+        
+        # Перезапускаем планировщик
+        start_scheduler()
+        
+        # Получаем обновленную информацию
+        info = get_scheduler_info()
+        
+        logger.info(f"Планировщик перезапущен через API, задач: {info['jobs_count']}")
+        
+        return {
+            "success": True,
+            "message": "Планировщик успешно перезапущен",
+            "jobs_count": info['jobs_count'],
+            "running": info['running']
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка API перезапуска планировщика: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка перезапуска планировщика: {str(e)}")
+
+@router.get("/{user_id}/responses", response_model=List[UserResponseListItem])
+def get_user_responses(
+    user_id: int, 
+    skip: int = Query(0, ge=0, description="Количество записей для пропуска"),
+    limit: int = Query(20, ge=1, le=100, description="Максимальное количество записей"),
+    db: Session = Depends(get_db)
+):
+    """Получает историю ответов конкретного пользователя с пагинацией.
+    
+    Возвращает список всех ответов пользователя в обратном хронологическом порядке
+    (сначала новые). Поддерживает пагинацию для эффективной работы с большими объемами данных.
+    
+    Args:
+        user_id (int): Уникальный идентификатор пользователя в базе данных.
+        skip (int): Количество записей для пропуска (offset). По умолчанию 0.
+        limit (int): Максимальное количество записей для возврата. По умолчанию 20, максимум 100.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        List[UserResponseListItem]: Список ответов пользователя с сокращенной информацией.
+    
+    Raises:
+        HTTPException: 404 если пользователь не найден, 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /users/123/responses?skip=0&limit=10
+        >>> # Response: [UserResponseListItem, UserResponseListItem, ...]
+    """
+    try:
+        # Проверяем существование пользователя
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Получаем ответы пользователя с пагинацией
+        responses = db.query(UserResponse).filter(
+            UserResponse.user_id == user_id
+        ).order_by(desc(UserResponse.created_at)).offset(skip).limit(limit).all()
+        
+        # Преобразуем в сокращенный формат для списка
+        result = []
+        for response in responses:
+            preview_text = response.response_text[:100] + "..." if len(response.response_text) > 100 else response.response_text
+            
+            result.append(UserResponseListItem(
+                id=response.id,
+                user_id=response.user_id,
+                response_text_preview=preview_text,
+                created_at=response.created_at,
+                telegram_username=response.telegram_username,
+                full_name=response.full_name
+            ))
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения истории ответов пользователя {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/{user_id}/responses/{response_id}", response_model=UserResponseResponse)
+def get_user_response_detail(
+    user_id: int, 
+    response_id: int,
+    db: Session = Depends(get_db)
+):
+    """Получает полную информацию о конкретном ответе пользователя.
+    
+    Возвращает детальную информацию об одном ответе, включая полный текст ответа
+    и все метаданные на момент отправки.
+    
+    Args:
+        user_id (int): Уникальный идентификатор пользователя в базе данных.
+        response_id (int): Уникальный идентификатор ответа.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        UserResponseResponse: Полная информация об ответе пользователя.
+    
+    Raises:
+        HTTPException: 404 если пользователь или ответ не найден, 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /users/123/responses/456
+        >>> # Response: UserResponseResponse with full details
+    """
+    try:
+        # Проверяем существование пользователя
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Получаем конкретный ответ
+        response = db.query(UserResponse).filter(
+            UserResponse.id == response_id,
+            UserResponse.user_id == user_id
+        ).first()
+        
+        if not response:
+            raise HTTPException(status_code=404, detail="Response not found")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения ответа {response_id} пользователя {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/responses/recent", response_model=List[UserResponseListItem])
+def get_recent_responses(
+    skip: int = Query(0, ge=0, description="Количество записей для пропуска"),
+    limit: int = Query(20, ge=1, le=100, description="Максимальное количество записей"),
+    db: Session = Depends(get_db)
+):
+    """Получает последние ответы всех пользователей.
+    
+    Возвращает список недавних ответов всех активированных пользователей
+    в обратном хронологическом порядке для мониторинга активности команды.
+    
+    Args:
+        skip (int): Количество записей для пропуска (offset). По умолчанию 0.
+        limit (int): Максимальное количество записей для возврата. По умолчанию 20, максимум 100.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        List[UserResponseListItem]: Список последних ответов всех пользователей.
+    
+    Raises:
+        HTTPException: 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /users/responses/recent?limit=10
+        >>> # Response: [UserResponseListItem, UserResponseListItem, ...]
+    """
+    try:
+        # Получаем последние ответы от всех пользователей
+        responses = db.query(UserResponse).join(User).filter(
+            User.is_verified == True  # Только от активированных пользователей
+        ).order_by(desc(UserResponse.created_at)).offset(skip).limit(limit).all()
+        
+        # Преобразуем в сокращенный формат для списка
+        result = []
+        for response in responses:
+            preview_text = response.response_text[:100] + "..." if len(response.response_text) > 100 else response.response_text
+            
+            result.append(UserResponseListItem(
+                id=response.id,
+                user_id=response.user_id,
+                response_text_preview=preview_text,
+                created_at=response.created_at,
+                telegram_username=response.telegram_username,
+                full_name=response.full_name
+            ))
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения последних ответов: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

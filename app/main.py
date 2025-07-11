@@ -1,7 +1,13 @@
+import sys
+import os
 import threading
 import logging
 import uvicorn
 from fastapi import FastAPI
+
+# Добавляем корневую директорию в PYTHONPATH для прямого запуска
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.scheduler import start_scheduler
 
@@ -15,7 +21,7 @@ logging.basicConfig(
 )
 from app.core.database import engine
 from app.models import base
-from app.api.endpoints import users
+from app.api.endpoints import users, groups
 
 # Глобальная переменная для предотвращения повторной инициализации
 _services_initialized = False
@@ -24,6 +30,7 @@ app = FastAPI(title="AI Daily Tasks API")
 
 # Роуты
 app.include_router(users.router, prefix="/users", tags=["Users"])
+app.include_router(groups.router, prefix="/api/groups", tags=["Groups"])
 
 
 # --- Базовый эндпоинт

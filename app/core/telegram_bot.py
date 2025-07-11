@@ -57,11 +57,31 @@ class TelegramBot:
                         "2. Отвечайте на утренние сообщения бота\n"
                         "3. Получите доступ к системе планирования\n\n"
                         "⏰ *Время опросов:* 9:30 (UTC+6)\n"
-                        "📝 *Формат ответа:* свободный текст с планами на день"
+                        "📝 *Формат ответа:* свободный текст с планами на день\n\n"
+                        "🔄 *Команды:*\n"
+                        "• /change - изменить сегодняшний план\n"
+                        "• /help - показать эту справку"
                     )
                     self.bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
             except Exception as e:
                 logger.error(f"Error in help command: {e}")
+
+        @self.bot.message_handler(commands=['change'])
+        def handle_change(message):
+            """Обработчик команды /change для редактирования плана"""
+            try:
+                user = message.from_user
+                chat_type = message.chat.type
+                logger.info(f"Change command from user {user.id} (@{user.username}) in {chat_type}")
+                
+                # Обрабатываем только личные сообщения
+                if chat_type == 'private':
+                    self.bot_service.handle_change_command(message, self.bot)
+                
+            except Exception as e:
+                logger.error(f"Error in change command: {e}")
+                if message.chat.type == 'private':
+                    self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке команды")
 
         @self.bot.message_handler(func=lambda message: True, content_types=['text'])
         def handle_text_message(message):

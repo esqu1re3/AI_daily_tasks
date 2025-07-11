@@ -1,5 +1,5 @@
 # Модель пользователя (сотрудника)
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -12,9 +12,9 @@ class User(Base):
     
     Поддерживает различные этапы жизненного цикла пользователя:
     - Создание записи при первом контакте
-    - Активация через ссылку от администратора
+    - Активация через ссылку от администратора группы
     - Ежедневные ответы на утренние вопросы
-    - Управление активностью администратором
+    - Управление активностью администратором группы
     
     Attributes:
         id (int): Уникальный идентификатор записи в базе данных.
@@ -28,6 +28,9 @@ class User(Base):
         last_response (str): Последний ответ на утренний вопрос.
         has_responded_today (bool): Флаг ответа на сегодняшний вопрос.
         activation_token (str): Токен для активации через ссылку.
+        group_id (int): Идентификатор группы, к которой принадлежит пользователь.
+        group: Связь с группой пользователя.
+        responses: Связь с историей ответов пользователя.
     
     Examples:
         >>> # Создание нового пользователя при активации
@@ -36,7 +39,8 @@ class User(Base):
         ...     username="john_doe",
         ...     full_name="John Doe",
         ...     is_verified=True,
-        ...     is_group_member=True
+        ...     is_group_member=True,
+        ...     group_id=1
         ... )
         >>> # Пользователь готов получать утренние вопросы
     """
@@ -53,3 +57,13 @@ class User(Base):
     last_response = Column(String, nullable=True)  # последний ответ на утренний вопрос
     has_responded_today = Column(Boolean, default=False)  # ответил ли сегодня
     activation_token = Column(String, nullable=True, index=True)  # токен для активации через диплинк
+    response_retry_count = Column(Integer, default=0)  # количество попыток переписать ответ сегодня
+
+    # === НОВЫЕ ПОЛЯ ДЛЯ СИСТЕМЫ ГРУПП ===
+    group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)  # ID группы пользователя
+
+    # Связь с группой
+    group = relationship("Group", back_populates="members")
+    
+    # Связь с историей ответов
+    responses = relationship("UserResponse", back_populates="user", cascade="all, delete-orphan")

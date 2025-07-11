@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.config import settings
 from app.core.database import SessionLocal
 from app.models.user import User
+from app.models.user_response import UserResponse
 from app.services.gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
@@ -49,46 +50,55 @@ def _ensure_services_initialized():
             ADMIN_ID = None
             logger.warning("ADMIN_ID не настроен в переменных окружения")
 
-def send_morning_questions():
-    """Отправляет утренние вопросы всем активным участникам команды.
+def send_morning_questions_to_group(group_id):
+    """Отправляет утренние вопросы участникам конкретной группы.
     
     Выполняет следующие действия:
-    1. Сбрасывает флаги ответов для нового дня
-    2. Получает список активных и активированных участников
-    3. Отправляет утренний вопрос каждому участнику
-    4. Планирует генерацию сводки через 1 час
+    1. Сбрасывает флаги ответов для нового дня для группы
+    2. Получает список активных и активированных участников группы
+    3. Отправляет утренний вопрос каждому участнику группы
+    4. Планирует генерацию сводки группы через 1 час
     
-    Функция запускается автоматически планировщиком в заданное время.
-    Обрабатывает ошибки отправки сообщений индивидуально для каждого пользователя.
+    Args:
+        group_id (int): ID группы для рассылки.
     
     Note:
-        Время выполнения настраивается в start_scheduler().
-        По умолчанию: 9:30 по времени Asia/Bishkek.
+        Функция запускается автоматически планировщиком для каждой группы.
+        Время выполнения индивидуально для каждой группы.
     
     Examples:
         >>> # Функция вызывается автоматически планировщиком
-        >>> # Вручную можно вызвать для тестирования:
-        >>> send_morning_questions()
+        >>> send_morning_questions_to_group(1)
     """
     _ensure_services_initialized()
     db = SessionLocal()
     try:
-        # Сбрасываем флаги ответов на новый день
-        db.query(User).update({
+        from app.models.group import Group
+        
+        # Получаем информацию о группе
+        group = db.query(Group).filter(Group.id == group_id, Group.is_active == True).first()
+        if not group:
+            logger.warning(f"Группа {group_id} не найдена или неактивна")
+            return
+        
+        # Сбрасываем флаги ответов на новый день только для участников этой группы
+        db.query(User).filter(User.group_id == group_id).update({
             User.has_responded_today: False,
-            User.last_response: None
+            User.last_response: None,
+            User.response_retry_count: 0  # Сбрасываем счетчик попыток для нового дня
         })
         db.commit()
         
-        # Получаем активных И активированных пользователей
+        # Получаем активных И активированных участников группы
         active_users = db.query(User).filter(
+            User.group_id == group_id,
             User.is_active == True,
             User.is_verified == True,  # Проверяем активацию
             User.is_group_member == True  # Проверяем участие в команде
         ).all()
         
         if not active_users:
-            logger.info("Нет активных активированных участников команды для рассылки")
+            logger.info(f"Нет активных участников в группе '{group.name}' (ID: {group_id}) для рассылки")
             return
         
         question = "🌅 Поздравляю с успешным завершением рабочего дня! Мне нужно знать, какие задачи сегодня получилось решить и какой план на завтра. Какие сложности возникли?"
@@ -102,39 +112,61 @@ def send_morning_questions():
                 )
                 success_count += 1
                 username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
-                logger.info(f"Утреннее сообщение отправлено пользователю {username_display}")
+                logger.info(f"Утреннее сообщение отправлено участнику группы '{group.name}': {username_display}")
             except Exception as e:
                 username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
-                logger.error(f"Ошибка отправки утреннего сообщения пользователю {username_display}: {e}")
+                logger.error(f"Ошибка отправки утреннего сообщения участнику группы '{group.name}' {username_display}: {e}")
         
-        logger.info(f"Утренняя рассылка завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
+        logger.info(f"Утренняя рассылка для группы '{group.name}' завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
         
-        # Запланируем генерацию сводки ровно через 1 час
+        # Запланируем генерацию сводки для группы ровно через 1 час
         summary_time = datetime.now() + timedelta(hours=1)
         scheduler.add_job(
-            generate_summary_after_timeout,
+            generate_summary_after_timeout_for_group,
             'date',
             run_date=summary_time,
-            id='summary_after_1hour'
+            id=f'summary_group_{group_id}_after_1hour'
         )
         
-        logger.info(f"Сводка будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 1 час)")
+        logger.info(f"Сводка для группы '{group.name}' будет сгенерирована в {summary_time.strftime('%H:%M:%S')} (через 1 час)")
         
     except Exception as e:
-        logger.error(f"Ошибка в утренней рассылке: {e}")
+        logger.error(f"Ошибка в утренней рассылке для группы {group_id}: {e}")
     finally:
         db.close()
 
-def generate_summary_after_timeout():
-    """Генерирует сводку после истечения времени ожидания ответов.
+def send_morning_questions():
+    """Отправляет утренние вопросы всем группам (legacy-функция для обратной совместимости).
     
-    Запускается автоматически через 1 час после отправки утренних вопросов.
+    Перебирает все активные группы и запускает для них рассылку по расписанию.
+    Используется как fallback для групп без индивидуального расписания.
+    """
+    _ensure_services_initialized()
+    db = SessionLocal()
+    try:
+        from app.models.group import Group
+        
+        # Получаем все активные группы
+        active_groups = db.query(Group).filter(Group.is_active == True).all()
+        
+        logger.info(f"Запуск утренней рассылки для {len(active_groups)} групп")
+        
+        for group in active_groups:
+            send_morning_questions_to_group(group.id)
+            
+    except Exception as e:
+        logger.error(f"Ошибка в общей утренней рассылке: {e}")
+    finally:
+        db.close()
+
+def generate_summary_after_timeout_for_group(group_id):
+    """Генерирует сводку для конкретной группы после истечения времени ожидания ответов.
+    
+    Запускается автоматически через 1 час после отправки утренних вопросов группе.
     Собирает статистику ответов и запускает генерацию сводки в отдельном потоке.
     
-    Выполняет следующие действия:
-    1. Получает список активных участников команды
-    2. Определяет кто ответил, а кто нет
-    3. Запускает генерацию сводки в отдельном потоке
+    Args:
+        group_id (int): ID группы для генерации сводки.
     
     Note:
         Использует многопоточность для предотвращения блокировки планировщика
@@ -142,52 +174,84 @@ def generate_summary_after_timeout():
     
     Examples:
         >>> # Функция вызывается автоматически планировщиком
-        >>> # Вручную можно вызвать для тестирования:
-        >>> generate_summary_after_timeout()
+        >>> generate_summary_after_timeout_for_group(1)
     """
     db = SessionLocal()
     try:
-        # Получаем активных активированных участников команды
+        from app.models.group import Group
+        
+        # Получаем информацию о группе
+        group = db.query(Group).filter(Group.id == group_id, Group.is_active == True).first()
+        if not group:
+            logger.warning(f"Группа {group_id} не найдена или неактивна")
+            return
+        
+        # Получаем активных активированных участников группы
         active_users = db.query(User).filter(
+            User.group_id == group_id,
             User.is_active == True,
             User.is_verified == True,  # Проверяем активацию
             User.is_group_member == True  # Проверяем участие в команде
         ).all()
         
         if not active_users:
-            logger.info("Нет активных активированных участников команды для генерации сводки")
+            logger.info(f"Нет активных участников в группе '{group.name}' (ID: {group_id}) для генерации сводки")
             return
         
         # Проверяем кто ответил
         responded_users = [user for user in active_users if user.has_responded_today]
         not_responded_users = [user for user in active_users if not user.has_responded_today]
         
-        logger.info(f"Время истекло. Статус ответов: {len(responded_users)}/{len(active_users)} участников ответили")
+        logger.info(f"Время истекло для группы '{group.name}'. Статус ответов: {len(responded_users)}/{len(active_users)} участников ответили")
         
-        # Генерируем сводку с тем что есть В ОТДЕЛЬНОМ ПОТОКЕ
+        # Генерируем сводку для группы с тем что есть В ОТДЕЛЬНОМ ПОТОКЕ
         threading.Thread(
-            target=generate_and_send_summary, 
-            args=(active_users,), 
+            target=generate_and_send_summary_for_group, 
+            args=(group, active_users), 
             daemon=True
         ).start()
-        logger.info("Генерация сводки по таймауту запущена в отдельном потоке")
+        logger.info(f"Генерация сводки для группы '{group.name}' по таймауту запущена в отдельном потоке")
                 
     except Exception as e:
-        logger.error(f"Ошибка при генерации сводки по таймауту: {e}")
+        logger.error(f"Ошибка при генерации сводки по таймауту для группы {group_id}: {e}")
     finally:
         db.close()
 
-def generate_and_send_summary(users):
-    """Генерирует сводку планов команды через Gemini AI и отправляет администратору.
+def generate_summary_after_timeout():
+    """Генерирует сводку после истечения времени ожидания ответов (legacy-функция).
+    
+    Перебирает все группы и генерирует сводки для каждой.
+    Используется для обратной совместимости.
+    """
+    db = SessionLocal()
+    try:
+        from app.models.group import Group
+        
+        # Получаем все активные группы
+        active_groups = db.query(Group).filter(Group.is_active == True).all()
+        
+        logger.info(f"Генерация сводок для {len(active_groups)} групп по таймауту")
+        
+        for group in active_groups:
+            generate_summary_after_timeout_for_group(group.id)
+                
+    except Exception as e:
+        logger.error(f"Ошибка при общей генерации сводок по таймауту: {e}")
+    finally:
+        db.close()
+
+def generate_and_send_summary_for_group(group, users):
+    """Генерирует сводку планов группы через Gemini AI и отправляет администратору группы.
     
     Выполняет следующие действия:
-    1. Собирает все ответы участников команды
+    1. Собирает все ответы участников группы
     2. Формирует промпт для Gemini API
     3. Генерирует сводку через Gemini AI
-    4. Отправляет готовую сводку администратору в Telegram
+    4. Отправляет готовую сводку администратору группы в Telegram
     
     Args:
-        users (List[User]): Список пользователей для включения в сводку.
+        group (Group): Объект группы.
+        users (List[User]): Список пользователей группы для включения в сводку.
     
     Note:
         Функция запускается в отдельном потоке для предотвращения блокировки.
@@ -195,13 +259,15 @@ def generate_and_send_summary(users):
         Длинные сообщения автоматически разбиваются на части.
     
     Examples:
+        >>> from app.models.group import Group
         >>> from app.models.user import User
+        >>> group = Group(...)
         >>> users = [user1, user2, user3]
-        >>> generate_and_send_summary(users)
-        # Сводка будет сгенерирована и отправлена админу
+        >>> generate_and_send_summary_for_group(group, users)
+        # Сводка будет сгенерирована и отправлена админу группы
     """
-    if not ADMIN_ID:
-        logger.error("ADMIN_ID не настроен, не могу отправить сводку")
+    if not group.admin_id:
+        logger.error(f"У группы '{group.name}' (ID: {group.id}) не настроен admin_id, не могу отправить сводку")
         return
     
     try:
@@ -278,42 +344,90 @@ def generate_and_send_summary(users):
             
             summary = basic_summary
         
-        # Формируем финальное сообщение для админа
-        admin_message = f"📊 Утренняя сводка планов команды\n"
+        # Формируем финальное сообщение для админа группы
+        admin_message = f"📊 Утренняя сводка планов группы '{group.name}'\n"
         admin_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
         admin_message += f"👥 Участников: {len(users)}\n"
         admin_message += f"✅ Ответили: {len(responded_users)}\n"
         admin_message += f"⏳ Не ответили: {len(not_responded_users)}\n\n"
         admin_message += summary
         
-        # Отправляем админу
+        # Отправляем администратору группы
         try:
             # Разбиваем длинные сообщения
             if len(admin_message) > 4000:
                 parts = [admin_message[i:i+4000] for i in range(0, len(admin_message), 4000)]
                 for i, part in enumerate(parts):
                     if i == 0:
-                        bot.send_message(chat_id=ADMIN_ID, text=part)
+                        bot.send_message(chat_id=int(group.admin_id), text=part)
                     else:
-                        bot.send_message(chat_id=ADMIN_ID, text=f"(продолжение {i+1})\n{part}")
+                        bot.send_message(chat_id=int(group.admin_id), text=f"(продолжение {i+1})\n{part}")
             else:
-                bot.send_message(chat_id=ADMIN_ID, text=admin_message)
+                bot.send_message(chat_id=int(group.admin_id), text=admin_message)
             
-            logger.info("Сводка успешно отправлена админу")
+            admin_name = group.admin_full_name or group.admin_username or f"ID:{group.admin_id}"
+            logger.info(f"Сводка группы '{group.name}' успешно отправлена администратору {admin_name}")
             
         except Exception as e:
-            logger.error(f"Ошибка отправки сводки админу: {e}")
+            admin_name = group.admin_full_name or group.admin_username or f"ID:{group.admin_id}"
+            logger.error(f"Ошибка отправки сводки группы '{group.name}' администратору {admin_name}: {e}")
             
     except Exception as e:
-        logger.error(f"Ошибка генерации сводки: {e}")
+        logger.error(f"Ошибка генерации сводки группы '{group.name}': {e}")
+
+def generate_and_send_summary(users):
+    """Генерирует сводку планов команды через Gemini AI (legacy-функция для обратной совместимости).
+    
+    Перебирает группы пользователей и генерирует отдельные сводки для каждой группы.
+    Используется для обратной совместимости с существующим кодом.
+    
+    Args:
+        users (List[User]): Список пользователей для включения в сводку.
+    
+    Examples:
+        >>> users = [user1, user2, user3]
+        >>> generate_and_send_summary(users)
+        # Сводки будут сгенерированы для каждой группы отдельно
+    """
+    if not users:
+        return
+    
+    # Группируем пользователей по группам
+    from collections import defaultdict
+    from app.models.group import Group
+    
+    db = SessionLocal()
+    try:
+        groups_users = defaultdict(list)
+        
+        for user in users:
+            if user.group_id:
+                groups_users[user.group_id].append(user)
+            else:
+                # Пользователи без группы - добавляем к группе по умолчанию
+                default_group = db.query(Group).filter(Group.is_active == True).first()
+                if default_group:
+                    groups_users[default_group.id].append(user)
+        
+        # Генерируем сводки для каждой группы
+        for group_id, group_users in groups_users.items():
+            group = db.query(Group).filter(Group.id == group_id).first()
+            if group:
+                generate_and_send_summary_for_group(group, group_users)
+                
+    except Exception as e:
+        logger.error(f"Ошибка в legacy-функции генерации сводки: {e}")
+    finally:
+        db.close()
 
 def process_user_response(user, response_text):
     """Обрабатывает ответ пользователя на утренний вопрос.
     
     Выполняет следующие действия:
     1. Сохраняет ответ пользователя в базе данных
-    2. Обновляет информацию о пользователе (имя, username)
-    3. Проверяет, ответили ли все участники для досрочной генерации сводки
+    2. Сохраняет полную историю ответа в user_responses
+    3. Обновляет информацию о пользователе (имя, username)
+    4. Проверяет, ответили ли все участники для досрочной генерации сводки
     
     Args:
         user: Объект пользователя Telegram с атрибутами id, username, first_name, last_name.
@@ -350,6 +464,17 @@ def process_user_response(user, response_text):
                 full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
                 db_user.full_name = full_name
             
+            # ===== НОВАЯ ЛОГИКА: Сохраняем в историю ответов =====
+            # Создаем запись в user_responses для истории
+            user_response = UserResponse(
+                user_id=db_user.id,
+                response_text=response_text,
+                telegram_user_id=str(user.id),
+                telegram_username=user.username,
+                full_name=db_user.full_name
+            )
+            db.add(user_response)
+            
             db.commit()
             
             # Используем full_name для отображения, если есть
@@ -360,42 +485,55 @@ def process_user_response(user, response_text):
             else:
                 user_display = f"ID:{db_user.user_id}"
             
-            logger.info(f"Обновлен ответ пользователя {user_display}")
+            logger.info(f"Обновлен ответ пользователя {user_display}, сохранен в историю (ID: {user_response.id})")
             
-            # Проверяем, ответили ли все активные активированные участники команды (досрочная отправка)
-            active_users = db.query(User).filter(
-                User.is_active == True,
-                User.is_verified == True,  # Проверяем активацию
-                User.is_group_member == True  # Проверяем участие в команде
-            ).all()
-            responded_users = [u for u in active_users if u.has_responded_today]
-            
-            if len(responded_users) == len(active_users) and len(active_users) > 0:
-                logger.info(f"Все участники ответили досрочно ({len(responded_users)}/{len(active_users)}). Генерируем сводку немедленно.")
+            # ===== НОВАЯ ЛОГИКА: Проверяем только участников той же группы =====
+            if db_user.group_id:
+                # Проверяем, ответили ли все активные участники ЭТОЙ ГРУППЫ (досрочная отправка)
+                from app.models.group import Group
                 
-                # Отменяем запланированную задачу через 1 час
-                try:
-                    if scheduler.get_job('summary_after_1hour'):
-                        scheduler.remove_job('summary_after_1hour')
-                        logger.info("Отменена запланированная задача генерации сводки через 1 час")
-                except Exception as e:
-                    logger.warning(f"Не удалось отменить запланированную задачу: {e}")
-                
-                # Генерируем сводку немедленно В ОТДЕЛЬНОМ ПОТОКЕ
-                threading.Thread(
-                    target=generate_and_send_summary, 
-                    args=(active_users,), 
-                    daemon=True
-                ).start()
-                logger.info("Генерация сводки запущена в отдельном потоке")
+                group = db.query(Group).filter(Group.id == db_user.group_id).first()
+                if group:
+                    active_users_in_group = db.query(User).filter(
+                        User.group_id == db_user.group_id,
+                        User.is_active == True,
+                        User.is_verified == True,  # Проверяем активацию
+                        User.is_group_member == True  # Проверяем участие в команде
+                    ).all()
+                    responded_users_in_group = [u for u in active_users_in_group if u.has_responded_today]
+                    
+                    if len(responded_users_in_group) == len(active_users_in_group) and len(active_users_in_group) > 0:
+                        logger.info(f"Все участники группы '{group.name}' ответили досрочно ({len(responded_users_in_group)}/{len(active_users_in_group)}). Генерируем сводку немедленно.")
+                        
+                        # Отменяем запланированную задачу для этой группы через 1 час
+                        try:
+                            job_id = f'summary_group_{db_user.group_id}_after_1hour'
+                            if scheduler.get_job(job_id):
+                                scheduler.remove_job(job_id)
+                                logger.info(f"Отменена запланированная задача генерации сводки для группы '{group.name}' через 1 час")
+                        except Exception as e:
+                            logger.warning(f"Не удалось отменить запланированную задачу для группы '{group.name}': {e}")
+                        
+                        # Генерируем сводку для группы немедленно В ОТДЕЛЬНОМ ПОТОКЕ
+                        threading.Thread(
+                            target=generate_and_send_summary_for_group, 
+                            args=(group, active_users_in_group), 
+                            daemon=True
+                        ).start()
+                        logger.info(f"Генерация сводки для группы '{group.name}' запущена в отдельном потоке")
+                    else:
+                        logger.info(f"В группе '{group.name}' ответили {len(responded_users_in_group)}/{len(active_users_in_group)} участников. Ждем остальных или истечения времени.")
+                else:
+                    logger.warning(f"Группа с ID {db_user.group_id} не найдена")
             else:
-                logger.info(f"Ответили {len(responded_users)}/{len(active_users)} участников. Ждем остальных или истечения времени.")
+                logger.warning(f"Пользователь {user_display} не привязан ни к одной группе")
             
         else:
             logger.warning(f"Пользователь с user_id {user.id} не найден в базе")
             
     except Exception as e:
         logger.error(f"Ошибка обработки ответа пользователя: {e}")
+        db.rollback()
     finally:
         db.close()
 
@@ -497,16 +635,16 @@ def send_test_message(user_id: str, message: str = "🔔 Тестовое соо
         return {"success": False, "error": str(e)}
 
 def start_scheduler():
-    """Запускает планировщик задач для утренних опросов.
+    """Запускает планировщик задач для утренних опросов по группам.
     
     Выполняет следующие действия:
     1. Инициализирует все необходимые сервисы
     2. Удаляет существующие задачи при повторном запуске
-    3. Настраивает утреннюю рассылку по расписанию
+    3. Создает индивидуальные задачи для каждой активной группы
     4. Запускает планировщик в фоновом режиме
     
     Note:
-        По умолчанию утренняя рассылка настроена на 9:30 по времени Asia/Bishkek.
+        Каждая группа имеет свое расписание (morning_hour, morning_minute, timezone).
         Планировщик работает в фоновом режиме и не блокирует основной поток.
     
     Raises:
@@ -514,44 +652,88 @@ def start_scheduler():
     
     Examples:
         >>> start_scheduler()
-        # Планировщик запущен, утренние вопросы будут отправляться автоматически
+        # Планировщик запущен, для каждой группы созданы отдельные задачи
     """
     _ensure_services_initialized()
     try:
-        logger.info("🔄 Инициализация планировщика...")
+        logger.info("🔄 Инициализация планировщика групп...")
         
-        # ВСЕГДА удаляем существующие задачи для обновления расписания
-        existing_jobs = scheduler.get_jobs()
-        logger.info(f"Найдено существующих задач: {len(existing_jobs)}")
+        from app.models.group import Group
+        db = SessionLocal()
         
-        for job in existing_jobs:
-            if job.id == 'morning_questions':
-                scheduler.remove_job(job.id)
-                logger.info("✅ Удалена существующая задача morning_questions")
-        
-        # ВСЕГДА добавляем задачу с актуальным временем
-        scheduler.add_job(
-            send_morning_questions,
-            'cron',
-            hour=17,   # 9:30 по Бишкеку (UTC+6)
-            minute=30,
-            id='morning_questions',
-            timezone='Asia/Bishkek'
-        )
-        logger.info("✅ Добавлена задача morning_questions с обновленным расписанием (9:30 Asia/Bishkek)")
+        try:
+            # Получаем все активные группы
+            active_groups = db.query(Group).filter(Group.is_active == True).all()
+            logger.info(f"Найдено активных групп: {len(active_groups)}")
+            
+            # ВСЕГДА удаляем существующие задачи для обновления расписания
+            existing_jobs = scheduler.get_jobs()
+            logger.info(f"Найдено существующих задач: {len(existing_jobs)}")
+            
+            # Удаляем все старые задачи (как legacy, так и group-based)
+            for job in existing_jobs:
+                if (job.id == 'morning_questions' or 
+                    job.id.startswith('morning_group_') or 
+                    job.id.startswith('summary_group_')):
+                    scheduler.remove_job(job.id)
+                    logger.info(f"✅ Удалена существующая задача: {job.id}")
+            
+            # Создаем задачи для каждой группы
+            created_jobs = 0
+            for group in active_groups:
+                try:
+                    job_id = f'morning_group_{group.id}'
+                    
+                    # Создаем задачу утренней рассылки для группы
+                    scheduler.add_job(
+                        send_morning_questions_to_group,
+                        'cron',
+                        args=[group.id],
+                        hour=group.morning_hour,
+                        minute=group.morning_minute,
+                        id=job_id,
+                        timezone=group.timezone
+                    )
+                    
+                    schedule_time = f"{group.morning_hour:02d}:{group.morning_minute:02d} {group.timezone}"
+                    logger.info(f"✅ Создана задача для группы '{group.name}' (ID: {group.id}): {schedule_time}")
+                    created_jobs += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ Ошибка создания задачи для группы '{group.name}' (ID: {group.id}): {e}")
+            
+            logger.info(f"✅ Создано задач рассылки: {created_jobs}/{len(active_groups)}")
+            
+            # Добавляем legacy-задачу для обратной совместимости (если нет групп)
+            if len(active_groups) == 0:
+                scheduler.add_job(
+                    send_morning_questions,
+                    'cron',
+                    hour=9,
+                    minute=30,
+                    id='morning_questions_legacy',
+                    timezone='Asia/Bishkek'
+                )
+                logger.info("✅ Добавлена legacy-задача (нет групп в системе)")
+            
+        finally:
+            db.close()
         
         # Запускаем планировщик только если он еще не запущен
         if not scheduler.running:
             scheduler.start()
-            logger.info("✅ Scheduler запущен (утренняя рассылка в 9:30 Asia/Bishkek, только активированным участникам)")
+            logger.info("✅ Scheduler запущен с индивидуальными расписаниями групп")
         else:
-            logger.info("✅ Scheduler уже работает, задачи обновлены (утренняя рассылка в 9:30 Asia/Bishkek)")
+            logger.info("✅ Scheduler уже работает, задачи групп обновлены")
         
         # Выводим все активные задачи для диагностики
         active_jobs = scheduler.get_jobs()
         logger.info(f"📋 Активных задач в планировщике: {len(active_jobs)}")
         for job in active_jobs:
-            logger.info(f"   - {job.id}: {job.next_run_time}")
+            if hasattr(job, 'next_run_time') and job.next_run_time:
+                logger.info(f"   - {job.id}: {job.next_run_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            else:
+                logger.info(f"   - {job.id}: (не запланирована)")
         
     except Exception as e:
         logger.error(f"❌ Ошибка запуска планировщика: {e}")

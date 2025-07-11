@@ -496,6 +496,22 @@ def delete_user(user_id):
         logger.error(f"Ошибка удаления пользователя: {e}")
         return False
 
+def get_user_responses_history(user_id, limit=10):
+    """Получение истории ответов пользователя через API"""
+    try:
+        response = requests.get(
+            f"http://localhost:8000/users/{user_id}/responses?limit={limit}",
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Ошибка API получения истории: {response.status_code}")
+            return []
+    except Exception as e:
+        logger.error(f"Ошибка получения истории ответов: {e}")
+        return []
+
 def reset_daily_responses_and_send_messages():
     """Сброс флагов ответов на новый день И отправка повторных сообщений участникам"""
     try:
@@ -562,7 +578,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Разделяем на вкладки
-tab1, tab2, tab3 = st.tabs(["👤 Участники", "📊 Статистика", "🔧 Диагностика"])
+tab1, tab2, tab3, tab4 = st.tabs(["👤 Участники", "🏢 Группы", "📊 Статистика", "🔧 Диагностика"])
 
 with tab1:
     st.markdown("### 👥 Управление участниками команды")
@@ -679,6 +695,40 @@ with tab1:
                         if user['last_response']:
                             with st.expander("📝 Последний ответ"):
                                 st.text(user['last_response'][:200] + "..." if len(user['last_response']) > 200 else user['last_response'])
+                        
+                        # ===== НОВАЯ ФУНКЦИЯ: История ответов =====
+                        with st.expander("📊 История ответов"):
+                            with st.spinner("Загрузка истории..."):
+                                history = get_user_responses_history(user['id'], limit=5)
+                            
+                            if history:
+                                st.markdown(f"**Всего ответов:** {len(history)}")
+                                for i, response in enumerate(history):
+                                    created_at = pd.to_datetime(response['created_at']).strftime('%d.%m.%Y %H:%M')
+                                    preview = response['response_text_preview']
+                                    
+                                    st.markdown(f"""
+                                    <div style="
+                                        background: var(--surface-color);
+                                        padding: 0.75rem;
+                                        border-radius: 8px;
+                                        margin: 0.5rem 0;
+                                        border-left: 3px solid var(--primary-color);
+                                    ">
+                                        <div style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.25rem;">
+                                            {created_at}
+                                        </div>
+                                        <div style="color: var(--text-primary); font-size: 0.9rem;">
+                                            {preview}
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                
+                                # Ссылка на полную историю (можно будет добавить в будущем)
+                                st.markdown('<p style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; margin-top: 1rem;">💡 Показаны последние 5 ответов</p>', unsafe_allow_html=True)
+                            else:
+                                st.info("История ответов пуста")
+                        # ===== КОНЕЦ НОВОЙ ФУНКЦИИ =====
                     
                     with col4:
                         # Кнопки управления
@@ -733,6 +783,321 @@ with tab1:
                     st.markdown("---")
 
 with tab2:
+    st.markdown("### 🏢 Управление группами")
+    
+    # Загрузка групп через API
+    try:
+        response = requests.get("http://localhost:8000/api/groups/", timeout=10)
+        if response.status_code == 200:
+            groups_data = response.json()
+            
+            # Кнопки управления
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                if st.button("🔄 Обновить список групп", type="primary", use_container_width=True):
+                    st.rerun()
+            with col2:
+                if st.button("➕ Создать новую группу", use_container_width=True):
+                    st.session_state.show_create_group = True
+            with col3:
+                if st.button("⏰ Глобальное расписание", use_container_width=True):
+                    st.session_state.show_global_schedule = True
+            
+            # Форма создания новой группы
+            if st.session_state.get('show_create_group', False):
+                with st.expander("➕ Создание новой группы", expanded=True):
+                    with st.form("create_group_form"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            group_name = st.text_input("Название группы", placeholder="Например: Команда разработки")
+                            admin_id = st.text_input("Telegram ID администратора", placeholder="123456789")
+                            admin_username = st.text_input("Username администратора (без @)", placeholder="admin_user")
+                        with col2:
+                            admin_full_name = st.text_input("Полное имя администратора", placeholder="Иван Иванов")
+                            morning_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
+                            morning_minute = st.selectbox("Минута рассылки", options=[0, 15, 30, 45], index=2)
+                        
+                        description = st.text_area("Описание группы (необязательно)", placeholder="Краткое описание группы...")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.form_submit_button("✅ Создать группу", type="primary", use_container_width=True):
+                                if group_name and admin_id:
+                                    group_data = {
+                                        "name": group_name,
+                                        "description": description if description else None,
+                                        "admin_id": admin_id,
+                                        "admin_username": admin_username if admin_username else None,
+                                        "admin_full_name": admin_full_name if admin_full_name else None,
+                                        "morning_hour": morning_hour,
+                                        "morning_minute": morning_minute
+                                    }
+                                    
+                                    try:
+                                        create_response = requests.post(
+                                            "http://localhost:8000/api/groups/", 
+                                            json=group_data, 
+                                            timeout=10
+                                        )
+                                        if create_response.status_code == 201:
+                                            st.success("✅ Группа успешно создана!")
+                                            st.session_state.show_create_group = False
+                                            st.rerun()
+                                        else:
+                                            error_data = create_response.json()
+                                            st.error(f"❌ Ошибка создания группы: {error_data.get('detail', 'Неизвестная ошибка')}")
+                                    except Exception as e:
+                                        st.error(f"❌ Ошибка подключения к API: {e}")
+                                else:
+                                    st.error("❌ Пожалуйста, заполните название группы и ID администратора")
+                        with col2:
+                            if st.form_submit_button("❌ Отмена", use_container_width=True):
+                                st.session_state.show_create_group = False
+                                st.rerun()
+            
+            # Форма глобального изменения расписания
+            if st.session_state.get('show_global_schedule', False):
+                with st.expander("⏰ Глобальное изменение расписания для всех групп", expanded=True):
+                    st.markdown("""
+                    <div style="background: rgba(255, 193, 7, 0.1); padding: 1rem; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 1rem;">
+                        <h4 style="margin: 0; color: #856404;">⚠️ Внимание!</h4>
+                        <p style="margin: 0.5rem 0 0 0; color: #856404;">
+                            Это действие изменит расписание для ВСЕХ активных групп. 
+                            Планировщик будет автоматически перезапущен.
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    with st.form("global_schedule_form"):
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            global_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
+                        with col2:
+                            global_minute = st.selectbox("Минута рассылки", options=[0, 15, 30, 45], index=2)
+                        with col3:
+                            global_timezone = st.selectbox(
+                                "Временная зона",
+                                options=["Asia/Bishkek", "Asia/Almaty", "Asia/Tashkent", "Europe/Moscow", "UTC"],
+                                index=0
+                            )
+                        
+                        st.markdown(f"""
+                        <div style="background: rgba(32, 201, 151, 0.1); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                            <strong>Новое расписание:</strong> {global_hour:02d}:{global_minute:02d} ({global_timezone})<br>
+                            <strong>Будет применено к:</strong> {len(groups_data) if groups_data else 0} группам
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.form_submit_button("✅ Применить ко всем группам", type="primary", use_container_width=True):
+                                if groups_data:
+                                    success_count = 0
+                                    error_count = 0
+                                    
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    for i, group in enumerate(groups_data):
+                                        try:
+                                            status_text.text(f"Обновляем группу '{group['name']}'...")
+                                            
+                                            schedule_response = requests.put(
+                                                f"http://localhost:8000/api/groups/{group['id']}/schedule",
+                                                params={
+                                                    "morning_hour": global_hour,
+                                                    "morning_minute": global_minute,
+                                                    "timezone": global_timezone
+                                                },
+                                                timeout=10
+                                            )
+                                            
+                                            if schedule_response.status_code == 200:
+                                                success_count += 1
+                                            else:
+                                                error_count += 1
+                                                
+                                        except Exception as e:
+                                            error_count += 1
+                                            st.error(f"Ошибка обновления группы '{group['name']}': {e}")
+                                        
+                                        progress_bar.progress((i + 1) / len(groups_data))
+                                    
+                                    status_text.empty()
+                                    progress_bar.empty()
+                                    
+                                    if success_count > 0:
+                                        st.success(f"✅ Расписание обновлено для {success_count}/{len(groups_data)} групп!")
+                                        if error_count == 0:
+                                            st.balloons()
+                                        st.session_state.show_global_schedule = False
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Не удалось обновить ни одной группы")
+                                else:
+                                    st.warning("⚠️ Нет групп для обновления")
+                        
+                        with col2:
+                            if st.form_submit_button("❌ Отмена", use_container_width=True):
+                                st.session_state.show_global_schedule = False
+                                st.rerun()
+            
+            # Отображение существующих групп
+            if groups_data:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4 style="color: var(--text-primary); margin: 0;">Всего групп: <span style="color: var(--primary-color);">{len(groups_data)}</span></h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                for group in groups_data:
+                    with st.container():
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                        
+                        with col1:
+                            status_icon = "✅" if group['is_active'] else "❌"
+                            st.markdown(f"""
+                            <div style="display: flex; align-items: center; padding: 1rem 0;">
+                                <div class="user-avatar">{group['name'][0].upper()}</div>
+                                <div>
+                                    <h4 style="margin: 0; color: var(--text-primary);">{status_icon} {group['name']}</h4>
+                                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">
+                                        {group['description'] or 'Без описания'}
+                                    </p>
+                                    <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem;">
+                                        ID: {group['id']} | Участников: {group['members_count'] or 0}
+                                    </p>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col2:
+                            admin_name = group['admin_full_name'] or group['admin_username'] or f"ID:{group['admin_id']}"
+                            schedule_time = f"{group['morning_hour']:02d}:{group['morning_minute']:02d}"
+                            
+                            st.markdown(f"""
+                            <div style="padding: 1rem 0;">
+                                <p style="margin: 0; color: var(--text-primary); font-weight: 500;">👤 {admin_name}</p>
+                                <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem;">
+                                    ⏰ Рассылка: {schedule_time} ({group['timezone']})
+                                </p>
+                                <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem;">
+                                    📅 Создана: {pd.to_datetime(group['created_at']).strftime('%d.%m.%Y')}
+                                </p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col3:
+                            with st.expander("🔗 Ссылка активации"):
+                                token_preview = group['activation_token'][:8] + "..."
+                                activation_url = f"https://t.me/aidailytasksBot?start={group['activation_token']}"
+                                st.markdown(f"""
+                                <div class="activation-link" style="font-size: 0.7rem; padding: 0.5rem;">
+                                    {activation_url}
+                                </div>
+                                """, unsafe_allow_html=True)
+                                if st.button("📋 Копировать", key=f"copy_{group['id']}", help="Скопировать ссылку"):
+                                    st.write("💡 Скопируйте ссылку выше")
+                            
+                            # ===== НОВАЯ ФУНКЦИЯ: Редактирование расписания =====
+                            with st.expander("⏰ Редактировать расписание"):
+                                with st.form(f"schedule_form_{group['id']}"):
+                                    new_hour = st.selectbox(
+                                        "Час рассылки", 
+                                        options=list(range(0, 24)), 
+                                        index=group['morning_hour'],
+                                        key=f"hour_{group['id']}"
+                                    )
+                                    new_minute = st.selectbox(
+                                        "Минута рассылки", 
+                                        options=[0, 15, 30, 45], 
+                                        index=[0, 15, 30, 45].index(group['morning_minute']) if group['morning_minute'] in [0, 15, 30, 45] else 0,
+                                        key=f"minute_{group['id']}"
+                                    )
+                                    new_timezone = st.selectbox(
+                                        "Временная зона",
+                                        options=["Asia/Bishkek", "Asia/Almaty", "Asia/Tashkent", "Europe/Moscow", "UTC"],
+                                        index=["Asia/Bishkek", "Asia/Almaty", "Asia/Tashkent", "Europe/Moscow", "UTC"].index(group['timezone']) if group['timezone'] in ["Asia/Bishkek", "Asia/Almaty", "Asia/Tashkent", "Europe/Moscow", "UTC"] else 0,
+                                        key=f"tz_{group['id']}"
+                                    )
+                                    
+                                    if st.form_submit_button("✅ Обновить расписание", type="primary", use_container_width=True):
+                                        try:
+                                            schedule_response = requests.put(
+                                                f"http://localhost:8000/api/groups/{group['id']}/schedule",
+                                                params={
+                                                    "morning_hour": new_hour,
+                                                    "morning_minute": new_minute,
+                                                    "timezone": new_timezone
+                                                },
+                                                timeout=10
+                                            )
+                                            if schedule_response.status_code == 200:
+                                                st.success(f"✅ Расписание группы '{group['name']}' обновлено! Новое время: {new_hour:02d}:{new_minute:02d} ({new_timezone})")
+                                                st.balloons()
+                                                st.rerun()
+                                            else:
+                                                error_data = schedule_response.json()
+                                                st.error(f"❌ Ошибка обновления расписания: {error_data.get('detail', 'Неизвестная ошибка')}")
+                                        except Exception as e:
+                                            st.error(f"❌ Ошибка подключения к API: {e}")
+                            # ===== КОНЕЦ НОВОЙ ФУНКЦИИ =====
+                        
+                        with col4:
+                            col4a, col4b, col4c = st.columns(3)
+                            
+                            with col4a:
+                                if st.button("📊", key=f"stats_{group['id']}", help="Статистика группы"):
+                                    try:
+                                        stats_response = requests.get(f"http://localhost:8000/api/groups/{group['id']}/stats", timeout=10)
+                                        if stats_response.status_code == 200:
+                                            stats_data = stats_response.json()
+                                            st.json(stats_data)
+                                    except Exception as e:
+                                        st.error(f"Ошибка получения статистики: {e}")
+                            
+                            with col4b:
+                                if st.button("🔄", key=f"regen_{group['id']}", help="Перегенерировать токен"):
+                                    try:
+                                        regen_response = requests.post(f"http://localhost:8000/api/groups/{group['id']}/regenerate-token", timeout=10)
+                                        if regen_response.status_code == 200:
+                                            st.success("✅ Токен обновлен!")
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Ошибка обновления токена")
+                                    except Exception as e:
+                                        st.error(f"❌ Ошибка: {e}")
+                            
+                            with col4c:
+                                if group['is_active']:
+                                    if st.button("❌", key=f"deactivate_{group['id']}", help="Деактивировать группу"):
+                                        try:
+                                            del_response = requests.delete(f"http://localhost:8000/api/groups/{group['id']}", timeout=10)
+                                            if del_response.status_code == 204:
+                                                st.success("✅ Группа деактивирована!")
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ Ошибка деактивации")
+                                        except Exception as e:
+                                            st.error(f"❌ Ошибка: {e}")
+                                else:
+                                    st.markdown("⚪", help="Группа деактивирована")
+                        
+                        st.markdown("---")
+            else:
+                st.markdown("""
+                <div class="metric-card" style="text-align: center; padding: 3rem;">
+                    <h3 style="color: var(--text-secondary);">🏢 Нет групп в системе</h3>
+                    <p style="color: var(--text-secondary);">Создайте первую группу для начала работы!</p>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.error("❌ Не удалось загрузить список групп")
+    except Exception as e:
+        st.error(f"❌ Ошибка подключения к API: {e}")
+
+with tab3:
     st.markdown("### 📊 Аналитика и статистика команды")
     
     users_df = load_users()
@@ -845,7 +1210,7 @@ with tab2:
             
             st.plotly_chart(fig, use_container_width=True)
 
-with tab3:
+with tab4:
     st.markdown("### 🔧 Диагностика и управление системой")
     
     # Информация о планировщике
@@ -944,36 +1309,64 @@ with tab3:
     </div>
     """, unsafe_allow_html=True)
     
-    if st.button("📢 Отправить сообщения СЕЙЧАС", type="secondary", use_container_width=True):
-        with st.spinner("Отправка повторных сообщений..."):
-            try:
-                response = requests.post("http://localhost:8000/users/send-repeat-questions", timeout=30)
-                if response.status_code == 200:
-                    result = response.json()
-                    success_count = result.get('success_count', 0)
-                    total_count = result.get('total_count', 0)
-                    
-                    if success_count > 0:
-                        success_placeholder = st.success(f"✅ Отправлено {success_count}/{total_count} сообщений")
-                        time.sleep(3)
-                        success_placeholder.empty()
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📢 Отправить сообщения СЕЙЧАС", type="secondary", use_container_width=True):
+            with st.spinner("Отправка повторных сообщений..."):
+                try:
+                    response = requests.post("http://localhost:8000/users/send-repeat-questions", timeout=30)
+                    if response.status_code == 200:
+                        result = response.json()
+                        success_count = result.get('success_count', 0)
+                        total_count = result.get('total_count', 0)
+                        
+                        if success_count > 0:
+                            success_placeholder = st.success(f"✅ Отправлено {success_count}/{total_count} сообщений")
+                            time.sleep(3)
+                            success_placeholder.empty()
+                        else:
+                            warning_placeholder = st.warning("⚠️ Сообщения не отправлены (нет активных участников)")
+                            time.sleep(3)
+                            warning_placeholder.empty()
+                        
+                        if result.get("errors"):
+                            with st.expander("⚠️ Ошибки отправки"):
+                                for error in result["errors"]:
+                                    st.warning(error)
                     else:
-                        warning_placeholder = st.warning("⚠️ Сообщения не отправлены (нет активных участников)")
-                        time.sleep(3)
-                        warning_placeholder.empty()
-                    
-                    if result.get("errors"):
-                        with st.expander("⚠️ Ошибки отправки"):
-                            for error in result["errors"]:
-                                st.warning(error)
-                else:
-                    error_placeholder = st.error("❌ Ошибка API сервера")
+                        error_placeholder = st.error("❌ Ошибка API сервера")
+                        time.sleep(2)
+                        error_placeholder.empty()
+                except Exception as e:
+                    error_placeholder = st.error(f"❌ Ошибка подключения: {e}")
                     time.sleep(2)
                     error_placeholder.empty()
-            except Exception as e:
-                error_placeholder = st.error(f"❌ Ошибка подключения: {e}")
-                time.sleep(2)
-                error_placeholder.empty()
+    
+    with col2:
+        if st.button("🔄 Перезапустить планировщик", use_container_width=True):
+            with st.spinner("Перезапуск планировщика..."):
+                try:
+                    response = requests.post("http://localhost:8000/users/scheduler/restart", timeout=30)
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get('success'):
+                            success_placeholder = st.success(f"✅ Планировщик перезапущен! Активных задач: {result.get('jobs_count', 0)}")
+                            time.sleep(3)
+                            success_placeholder.empty()
+                            st.rerun()
+                        else:
+                            error_placeholder = st.error(f"❌ Ошибка перезапуска: {result.get('message', 'Неизвестная ошибка')}")
+                            time.sleep(3)
+                            error_placeholder.empty()
+                    else:
+                        error_placeholder = st.error("❌ Ошибка API сервера")
+                        time.sleep(2)
+                        error_placeholder.empty()
+                except Exception as e:
+                    error_placeholder = st.error(f"❌ Ошибка подключения: {e}")
+                    time.sleep(2)
+                    error_placeholder.empty()
 
 # Боковая панель с информацией
 with st.sidebar:
