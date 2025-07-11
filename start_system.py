@@ -18,6 +18,7 @@ def check_env_file():
         print("GEMINI_API_KEY=your_gemini_api_key_here")
         print("TG_BOT_TOKEN=your_telegram_bot_token_here")
         print("ADMIN_ID=your_telegram_user_id_here")
+        print("GEMINI_MODEL=gemini-2.5-flash")
         return False
     return True
 

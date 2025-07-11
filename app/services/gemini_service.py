@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 class GeminiService:
     def __init__(self):
-        logger.debug("Initializing GeminiService")
+        logger.debug(f"Initializing GeminiService with model: {settings.GEMINI_MODEL}")
         # Store API key securely without logging it
-        self.api_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        self.api_url = f"https://generativelanguage.googleapis.com/v1/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
 
     def _post_process_text(self, text: str) -> str:
         """Постобработка текста от Gemini: удаление звездочек и очистка форматирования"""

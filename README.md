@@ -284,6 +284,7 @@ https://t.me/aidailytasksBot?start=group_activation
 GEMINI_API_KEY=AIzaSyC-1234567890abcdef
 TG_BOT_TOKEN=1234567890:ABCDEFghijklmnopqrstuvwxyz
 ADMIN_ID=123456789
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ## 📝 Лицензия
