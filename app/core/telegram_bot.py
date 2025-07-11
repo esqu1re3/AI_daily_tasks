@@ -66,6 +66,16 @@ class TelegramBot:
             except Exception as e:
                 logger.error(f"Error in help command: {e}")
 
+        @self.bot.message_handler(commands=['admin'])
+        def handle_admin(message):
+            """Обработчик команды /admin для активации администраторов"""
+            try:
+                self.bot_service.handle_admin_command(message, self.bot)
+            except Exception as e:
+                logger.error(f"Error in admin command: {e}")
+                if message.chat.type == 'private':
+                    self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке команды")
+
         @self.bot.message_handler(commands=['change'])
         def handle_change(message):
             """Обработчик команды /change для редактирования плана"""

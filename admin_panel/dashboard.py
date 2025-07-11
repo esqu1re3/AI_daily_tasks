@@ -14,7 +14,7 @@ import streamlit.components.v1 as components
 # Настройки страницы
 st.set_page_config(
     page_title="AI Daily Tasks — Админка",
-    page_icon="👥",
+    page_icon="🚀",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -641,7 +641,13 @@ if not init_database():
 # ======================
 
 # Заголовок с градиентом
-st.markdown('<h1 class="main-title">👥 AI Daily Tasks</h1>', unsafe_allow_html=True)
+st.markdown(
+    '<h1 style="display: flex; align-items: center; gap: 0.5rem; justify-content: center;">'
+    '<span style="font-size:2.5rem;line-height:1;">🚀</span>'
+    '<span class="main-title" style="margin:0;">AI Daily Tasks</span>'
+    '</h1>',
+    unsafe_allow_html=True
+)
 st.markdown('<p class="subtitle">Система управления командой и сбора вечерних планов</p>', unsafe_allow_html=True)
 
 # Информационная панель

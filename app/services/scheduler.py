@@ -117,7 +117,7 @@ def send_morning_questions_to_group(group_id):
                 username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
                 logger.error(f"Ошибка отправки утреннего сообщения участнику группы '{group.name}' {username_display}: {e}")
         
-        logger.info(f"Утренняя рассылка для группы '{group.name}' завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
+        logger.info(f"Вечерняя рассылка для группы '{group.name}' завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
         
         # Запланируем генерацию сводки для группы ровно через 1 час
         summary_time = datetime.now() + timedelta(hours=1)
@@ -353,7 +353,7 @@ def generate_and_send_summary_for_group(group, users):
             summary = basic_summary
         
         # Формируем финальное сообщение для админа группы
-        admin_message = f"📊 Утренняя сводка планов группы '{group.name}'\n"
+        admin_message = f"📊 Вечерняя сводка планов группы '{group.name}'\n"
         admin_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
         admin_message += f"👥 Участников: {len(users)}\n"
         admin_message += f"✅ Ответили: {len(responded_users)}\n"

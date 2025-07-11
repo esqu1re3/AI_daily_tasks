@@ -144,21 +144,81 @@ class BotService:
         finally:
             db.close()
 
+    def handle_admin_command(self, message, bot):
+        """Обрабатывает команду /admin для активации администраторов.
+        
+        Проверяет наличие pending записи по username с user_id=None,
+        и активирует ее, устанавливая user_id и верифицируя.
+        """
+        from app.core.database import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            user = message.from_user
+            
+            # Ищем существующего пользователя по user_id
+            db_user = db.query(User).filter(User.user_id == str(user.id)).first()
+            
+            if db_user and db_user.is_verified:
+                bot.reply_to(
+                    message,
+                    "✅ Ваш аккаунт администратора уже активирован!\n\n"
+                    "Вы будете получать сводки от групп, где вы администратор."
+                )
+                return
+            
+            # Если не найден по user_id, ищем pending по username
+            if user.username:
+                pending_user = db.query(User).filter(
+                    User.username == user.username,
+                    User.user_id.is_(None)
+                ).first()
+                
+                if pending_user:
+                    # Активируем pending запись
+                    pending_user.user_id = str(user.id)
+                    pending_user.is_verified = True
+                    pending_user.is_active = True
+                    pending_user.is_group_member = False
+                    
+                    full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+                    pending_user.full_name = full_name
+                    
+                    db.commit()
+                    db.refresh(pending_user)
+                    
+                    bot.reply_to(
+                        message,
+                        f"✅ Добро пожаловать, @{user.username}! \n\n"
+                        "Ваш аккаунт администратора успешно активирован.\n"
+                        "Вы будете получать сводки от своих групп."
+                    )
+                    logger.info(f"Activated admin user @{user.username} with user_id {user.id}")
+                else:
+                    bot.reply_to(
+                        message,
+                        "❌ Нет ожидающей активации для этого username.\n\n"
+                        "Обратитесь к администратору системы."
+                    )
+            else:
+                bot.reply_to(
+                    message,
+                    "❌ У вас не установлен username в Telegram.\n\n"
+                    "Установите его в настройках и попробуйте снова."
+                )
+                
+        except Exception as e:
+            logger.error(f"Error handling admin command: {e}")
+            bot.reply_to(message, "❌ Произошла ошибка при активации")
+        finally:
+            db.close()
+
     def _handle_start_command(self, message, bot, db):
         """Обрабатывает команду /start с возможным токеном активации.
         
         Различает два сценария:
         1. /start с токеном - активация нового пользователя
         2. /start без токена - приветствие активированного пользователя
-        
-        Args:
-            message: Объект сообщения Telegram с командой /start.
-            bot: Экземпляр Telegram бота для отправки ответов.
-            db: Сессия базы данных для работы с пользователями.
-        
-        Examples:
-            >>> # Вызывается автоматически при команде /start
-            >>> self._handle_start_command(start_message, bot, db_session)
         """
         user = message.from_user
         text = message.text
@@ -177,71 +237,21 @@ class BotService:
         
         if db_user and db_user.is_verified:
             target_group = db.query(Group).filter(Group.id == db_user.group_id).first()
-            schedule_time = f"{target_group.morning_hour:02d}:{target_group.morning_minute:02d}"
-            bot.reply_to(
-                message,
-                f"Каждый день в {schedule_time} я буду отправлять вам следующее сообщение:\n\n" \
-                "'🌅Поздравляю с успешным завершением рабочего дня! Мне нужно знать, какие задачи сегодня получилось решить и какой план на завтра. \nКакие сложности возникли?'\n\n"
-                "Просто отвечайте на мои сообщения своими рабочими планами.\n\n"
-                "✅ Ваш аккаунт активен и готов к работе!"
-            )
+            if target_group:
+                schedule_time = f"{target_group.morning_hour:02d}:{target_group.morning_minute:02d}"
+                bot.reply_to(
+                    message,
+                    f"✅ Ваш аккаунт активен!\n\n"
+                    f"Каждый день в {schedule_time} я буду отправлять вам сообщение с вопросами о планах."
+                )
+            else:
+                bot.reply_to(
+                    message,
+                    "✅ Ваш аккаунт активен, но группа не найдена. Обратитесь к администратору."
+                )
             return
         
-        # НОВАЯ ЛОГИКА: Создаем или обновляем пользователя для админа
-        if not db_user or not db_user.is_verified:
-            if user.username:
-                pending_user = db.query(User).filter(
-                    User.username == user.username,
-                    User.user_id.is_(None)
-                ).first()
-                
-                if pending_user:
-                    # Активируем существующую запись админа без user_id
-                    pending_user.user_id = str(user.id)
-                    pending_user.is_verified = True
-                    pending_user.is_active = True
-                    pending_user.is_group_member = False  # Не добавляем как участника группы
-                    if user.first_name:
-                        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
-                        pending_user.full_name = full_name
-                    db.commit()
-                    db.refresh(pending_user)
-                    db_user = pending_user
-                    logger.info(f"Activated pending admin user @{user.username} with user_id {user.id}")
-                    
-                    # Уведомление для админа
-                    bot.reply_to(
-                        message,
-                        f"✅ Добро пожаловать, @{user.username}! "
-                        "Ваш аккаунт администратора активирован. "
-                        "Вы будете получать сводки от групп, где вы админ."
-                    )
-                    return
-                
-            # Если не нашли pending, создаем нового пользователя (не админ?)
-            db_user = User(
-                user_id=str(user.id),
-                username=user.username,
-                is_verified=True,
-                is_active=True,
-                is_group_member=False
-            )
-            if user.first_name:
-                full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
-                db_user.full_name = full_name
-            db.add(db_user)
-            db.commit()
-            db.refresh(db_user)
-            
-            # Стандартное сообщение для нового пользователя
-            bot.reply_to(
-                message,
-                "✅ Ваш аккаунт успешно активирован! "
-                "Теперь вы можете получать уведомления."
-            )
-            return
-        
-        # Если пользователь не найден или не активирован (fallback)
+        # Если не активирован
         bot.reply_to(
             message,
             "👋 Привет! Для использования бота перейдите по ссылке активации от администратора.\n\n"
@@ -251,79 +261,36 @@ class BotService:
         )
 
     def _activate_user_with_token(self, activation_token, telegram_user, db, bot, message):
-        """Активирует пользователя через токен активации группы.
-        
-        Выполняет процедуру активации нового пользователя или реактивации существующего:
-        1. Проверяет валидность токена активации группы
-        2. Находит группу по токену
-        3. Ищет существующего пользователя по user_id или username
-        4. Создает нового пользователя или обновляет существующего
-        5. Назначает пользователя в найденную группу
-        6. Устанавливает статус активации и обновляет профиль
-        
-        Args:
-            activation_token (str): Токен активации группы из ссылки.
-            telegram_user: Объект пользователя Telegram с атрибутами id, username, first_name, last_name.
-            db: Сессия базы данных для работы с пользователями.
-            bot: Экземпляр Telegram бота для отправки ответов.
-            message: Объект сообщения Telegram для отправки ответа.
-        
-        Note:
-            Обрабатывает конфликты username между пользователями.
-            При успешной активации отправляет приветственное сообщение.
-            Откатывает изменения в БД при ошибках.
-        
-        Examples:
-            >>> # Вызывается автоматически при команде /start LsKhcPQqknf2pagJZ03...
-            >>> self._activate_user_with_token("LsKhcPQqknf2pagJZ03...", telegram_user, db, bot, message)
-        """
+        """Активирует пользователя через токен активации группы."""
         try:
-            # ===== НОВАЯ ЛОГИКА: Поиск группы по токену =====
+            # Поиск группы по токену
             from app.models.group import Group
             
-            # Проверяем валидность токена - ищем активную группу с таким токеном
             target_group = db.query(Group).filter(
                 Group.activation_token == activation_token,
                 Group.is_active == True
             ).first()
             
             if not target_group:
-                # Проверяем legacy токен для обратной совместимости
-                if activation_token == "group_activation":
-                    # Находим группу по умолчанию для legacy активации
-                    target_group = db.query(Group).filter(Group.is_active == True).first()
-                    
-                    if not target_group:
-                        bot.reply_to(
-                            message,
-                            "❌ Система групп не настроена.\n\n"
-                            "Обратитесь к администратору для создания группы."
-                        )
-                        return
-                else:
-                    bot.reply_to(
-                        message,
-                        "❌ Неверная ссылка активации или группа неактивна.\n\n"
-                        "Используйте актуальную ссылку от администратора или обратитесь к нему."
-                    )
-                    return
+                bot.reply_to(
+                    message,
+                    "❌ Неверная ссылка активации или группа неактивна."
+                )
+                return
             
-            # Ищем пользователя по user_id (приоритет)
+            # Ищем пользователя по user_id
             existing_user_by_id = db.query(User).filter(User.user_id == str(telegram_user.id)).first()
             
-            # Если пользователь уже активирован
             if existing_user_by_id and existing_user_by_id.is_verified:
                 schedule_time = f"{target_group.morning_hour:02d}:{target_group.morning_minute:02d}"
                 bot.reply_to(
                     message,
-                    "✅ Вы уже активированы в системе!\n\n"
-                    f"Каждый день в {schedule_time} я буду отправлять вам следующее сообщение:\n\n" \
-                    "'🌅 Поздравляю с успешным завершением рабочего дня! Мне нужно знать, какие задачи сегодня получилось решить и какой план на завтра. Какие сложности возникли?'\n\n"
-                    "Просто отвечайте на мои сообщения своими рабочими планами."
+                    f"✅ Вы уже активированы!\n\n"
+                    f"Ежедневно в {schedule_time} я буду присылать вопросы о планах."
                 )
                 return
             
-            # Проверяем, не занят ли username другим user_id
+            # Проверяем, не занят ли username
             existing_user_by_username = None
             if telegram_user.username:
                 existing_user_by_username = db.query(User).filter(
@@ -331,41 +298,17 @@ class BotService:
                     User.user_id != str(telegram_user.id)
                 ).first()
             
-            # НОВАЯ ЛОГИКА: Проверяем, существует ли запись с этим username без user_id (созданная при смене админа)
-            pending_user_by_username = None
-            if not existing_user_by_id and telegram_user.username:
-                pending_user_by_username = db.query(User).filter(
-                    User.username == telegram_user.username,
-                    User.user_id.is_(None)
-                ).first()
-            
-            # Определяем пользователя для активации
+            # Определяем пользователя
             if existing_user_by_id:
-                # Активируем существующего пользователя по user_id
                 db_user = existing_user_by_id
                 db_user.is_verified = True
                 db_user.activation_token = None
-                db_user.group_id = target_group.id  # ===== НАЗНАЧАЕМ В ГРУППУ =====
+                db_user.group_id = target_group.id
                 
-                # Обновляем username только если он не занят
                 if telegram_user.username and not existing_user_by_username:
                     db_user.username = telegram_user.username
                     
-            elif pending_user_by_username:
-                # Обновляем существующую запись без user_id
-                db_user = pending_user_by_username
-                db_user.user_id = str(telegram_user.id)
-                db_user.is_verified = True
-                db_user.activation_token = None
-                db_user.group_id = target_group.id
-                db_user.is_group_member = False
-                # Обновляем full_name
-                if telegram_user.first_name:
-                    full_name = f"{telegram_user.first_name or ''} {telegram_user.last_name or ''}".strip()
-                    db_user.full_name = full_name
             else:
-                # Создаем нового пользователя
-                # Username устанавливаем только если он не занят
                 new_username = telegram_user.username if telegram_user.username and not existing_user_by_username else None
                 
                 db_user = User(
@@ -374,45 +317,32 @@ class BotService:
                     is_verified=True,
                     is_group_member=True,
                     activation_token=None,
-                    group_id=target_group.id  # ===== НАЗНАЧАЕМ В ГРУППУ =====
+                    group_id=target_group.id
                 )
                 db.add(db_user)
             
-            # Обновляем full_name (если не обновили выше)
-            if telegram_user.first_name and not pending_user_by_username:  # Избегаем двойного обновления
+            # Обновляем full_name
+            if telegram_user.first_name:
                 full_name = f"{telegram_user.first_name or ''} {telegram_user.last_name or ''}".strip()
                 db_user.full_name = full_name
             
             db.commit()
             
             user_display = db_user.full_name or f"@{db_user.username}" if db_user.username else f"ID:{db_user.user_id}"
-            logger.info(f"Пользователь {user_display} успешно активирован в группе '{target_group.name}' (ID: {target_group.id})")
+            logger.info(f"Activated user {user_display} in group '{target_group.name}'")
             
-            # Уведомляем об успешной активации с информацией о группе
             welcome_name = db_user.full_name or (f"@{db_user.username}" if db_user.username else "коллега")
             schedule_time = f"{target_group.morning_hour:02d}:{target_group.morning_minute:02d}"
             welcome_message = f"🎉 Добро пожаловать в группу '{target_group.name}', {welcome_name}!\n\n" \
-                            "✅ Ваш аккаунт успешно активирован!\n\n" \
-                            f"Каждый день в {schedule_time} я буду отправлять вам следующее сообщение:\n\n" \
-                            "'🌅 Поздравляю с успешным завершением рабочего дня! Мне нужно знать, какие задачи сегодня получилось решить и какой план на завтра. Какие сложности возникли?'\n\n" \
-                            "Просто отвечайте на мои сообщения своими рабочими планами.\n\n" \
-                            "🚀 Система готова к работе!"
+                            f"✅ Аккаунт активирован!\n" \
+                            f"Ежедневно в {schedule_time} я буду присылать вопросы о планах."
             
-            logger.info(f"Отправка приветственного сообщения пользователю {user_display}")
-            try:
-                bot.reply_to(message, welcome_message)
-                logger.info(f"✅ Приветственное сообщение успешно отправлено пользователю {user_display}")
-            except Exception as msg_error:
-                logger.error(f"❌ Ошибка отправки приветственного сообщения пользователю {user_display}: {msg_error}")
+            bot.reply_to(message, welcome_message)
             
         except Exception as e:
-            logger.error(f"Ошибка активации пользователя: {e}")
+            logger.error(f"Activation error: {e}")
             db.rollback()
-            bot.reply_to(
-                message,
-                "❌ Произошла ошибка при активации аккаунта. "
-                "Попробуйте еще раз или обратитесь к администратору."
-            )
+            bot.reply_to(message, "❌ Ошибка активации. Попробуйте снова.")
 
     def handle_change_command(self, message, bot):
         """Обрабатывает команду /change для редактирования плана пользователя.

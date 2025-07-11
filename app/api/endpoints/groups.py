@@ -98,7 +98,29 @@ async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
     db.add(new_group)
     db.commit()
     db.refresh(new_group)
-    
+
+    # Создаём pending запись для админа
+    existing_admin = db.query(User).filter(User.username == clean_username).first()
+    if existing_admin:
+        if existing_admin.group_id != new_group.id:
+            existing_admin.group_id = new_group.id
+        existing_admin.is_group_member = False
+        existing_admin.is_active = True
+        existing_admin.is_verified = False
+    else:
+        new_admin = User(
+            username=clean_username,
+            group_id=new_group.id,
+            is_verified=False,
+            is_active=True,
+            is_group_member=False
+        )
+        db.add(new_admin)
+    db.commit()
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Created/Updated pending admin @{clean_username} for group '{new_group.name}'")
+
     new_group.members_count = 0
 
     # Restart scheduler to add the new group's schedule
