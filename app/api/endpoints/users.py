@@ -57,18 +57,15 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db (Session): Сессия базы данных (внедряется автоматически).
     
     Returns:
-        UserResponse: Созданный пользователь с присвоенным ID.
+        UserSchema: Созданный пользователь с присвоенным ID.
     
     Raises:
         HTTPException: 500 при ошибках базы данных.
     
     Examples:
         >>> # POST /users
-        >>> {
-        ...   "username": "john_doe",
-        ...   "full_name": "John Doe"
-        ... }
-        >>> # Response: UserResponse with id and other fields
+        >>> {"username": "john_doe", "full_name": "John Doe"}
+        >>> # Response: UserSchema with id and other fields
     """
     try:
         # Пользователи создаются автоматически при активации
@@ -103,14 +100,14 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
         db (Session): Сессия базы данных (внедряется автоматически).
     
     Returns:
-        List[UserResponse]: Список пользователей с их данными.
+        List[UserSchema]: Список пользователей с их данными.
     
     Raises:
         HTTPException: 500 при ошибках базы данных.
     
     Examples:
         >>> # GET /users?skip=0&limit=10
-        >>> # Response: [UserResponse, UserResponse, ...]
+        >>> # Response: [UserSchema, UserSchema, ...]
         
         >>> # GET /users?skip=10&limit=5
         >>> # Получить пользователей с 11 по 15

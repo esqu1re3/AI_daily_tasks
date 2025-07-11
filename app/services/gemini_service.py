@@ -9,6 +9,18 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 class GeminiService:
+    """Сервис для работы с Google Gemini API.
+    
+    Обеспечивает генерацию текстов, анализ качества ответов и постобработку.
+    Поддерживает ретраи и асинхронные вызовы для надежности.
+    
+    Attributes:
+        api_url: URL эндпоинта Gemini API с моделью и ключом.
+    
+    Examples:
+        >>> gemini = GeminiService()
+        >>> response = gemini.generate_text("Hello")
+    """
     def __init__(self):
         logger.debug(f"Initializing GeminiService with model: {settings.GEMINI_MODEL}")
         # Store API key securely without logging it

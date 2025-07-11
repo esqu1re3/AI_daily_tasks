@@ -15,6 +15,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class TelegramBot:
+    """Класс Telegram бота для системы AI Daily Tasks.
+    
+    Управляет взаимодействием с Telegram API, обработкой команд и сообщений.
+    Интегрируется с BotService для бизнес-логики.
+    
+    Attributes:
+        bot: Экземпляр TeleBot для работы с Telegram API.
+        gemini_service: Экземпляр GeminiService для AI-функций.
+        bot_service: Экземпляр BotService для обработки логики.
+    
+    Examples:
+        >>> bot_instance = TelegramBot()
+        >>> bot_instance.run()
+        # Бот запущен и готов принимать сообщения
+    """
     def __init__(self):
         self.bot = TeleBot(settings.TG_BOT_TOKEN, threaded=True)
         self.gemini_service = GeminiService()
@@ -106,7 +121,15 @@ class TelegramBot:
                     self.bot.reply_to(message, "⚠️ Произошла ошибка при обработке сообщения")
 
     def run(self):
-        """Запуск бота в режиме polling"""
+        """Запуск бота в режиме polling.
+        
+        Запускает бесконечный цикл обработки сообщений с обработкой ошибок
+        и автоматическим перезапуском при сбоях.
+        
+        Note:
+            Работает в non-stop режиме с таймаутами для стабильности.
+            При ошибках перезапускается через 5 секунд.
+        """
         logger.info("Starting Telegram bot in polling mode...")
         
         try:

@@ -22,7 +22,27 @@ async def get_groups(
     active_only: bool = Query(True, description="Показывать только активные группы"),
     db: Session = Depends(get_db)
 ):
-    """Получить список всех групп"""
+    """Получить список всех групп.
+    
+    Возвращает список групп с поддержкой пагинации и фильтрации.
+    Для каждой группы добавляется количество активированных участников.
+    
+    Args:
+        skip (int): Количество групп для пропуска (offset). По умолчанию 0.
+        limit (int): Максимальное количество групп для возврата. По умолчанию 100.
+        active_only (bool): Фильтровать только активные группы. По умолчанию True.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        List[GroupResponse]: Список групп с дополнительным полем members_count.
+    
+    Raises:
+        HTTPException: 500 при ошибках базы данных.
+    
+    Examples:
+        >>> # GET /api/groups?active_only=true&skip=0&limit=10
+        >>> # Response: [GroupResponse, ...]
+    """
     query = db.query(Group)
     
     if active_only:
@@ -65,7 +85,27 @@ async def get_group(group_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
 async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
-    """Создать новую группу"""
+    """Создать новую группу.
+    
+    Создает новую группу с указанными параметрами, генерирует токен активации
+    и создает pending-запись для администратора.
+    После создания перезапускает планировщик для добавления расписания группы.
+    
+    Args:
+        group_data (GroupCreate): Данные для создания группы.
+        db (Session): Сессия базы данных (внедряется автоматически).
+    
+    Returns:
+        GroupResponse: Созданная группа с members_count=0.
+    
+    Raises:
+        HTTPException: 400 если название группы не уникально или username админа пустой.
+    
+    Examples:
+        >>> # POST /api/groups
+        >>> {"name": "Team A", "admin_username": "admin1"}
+        >>> # Response: GroupResponse with id and activation_token
+    """
     
     # Проверяем, что admin_username указан и не пустой
     if not group_data.admin_username or not group_data.admin_username.strip():
