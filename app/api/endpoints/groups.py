@@ -53,7 +53,8 @@ async def get_group(group_id: int, db: Session = Depends(get_db)):
     # Получаем участников группы
     members = db.query(User).filter(
         User.group_id == group_id,
-        User.is_verified == True
+        User.is_verified == True,
+        User.is_group_member == True
     ).all()
     
     group.members_count = len(members)
@@ -173,7 +174,7 @@ async def update_group(
                     group_id=group_id,
                     is_verified=False,  # Будет активирован при первом входе в бот
                     is_active=True,
-                    is_group_member=True
+                    is_group_member=False
                 )
                 db.add(new_admin)
                 import logging
@@ -193,7 +194,8 @@ async def update_group(
     # Добавляем количество участников
     group.members_count = db.query(User).filter(
         User.group_id == group_id,
-        User.is_verified == True
+        User.is_verified == True,
+        User.is_group_member == True
     ).count()
     
     # Логируем изменение администратора
@@ -267,14 +269,16 @@ async def get_group_stats(
     # Общее количество участников
     total_members = db.query(User).filter(
         User.group_id == group_id,
-        User.is_verified == True
+        User.is_verified == True,
+        User.is_group_member == True
     ).count()
     
     # Активные участники (ответившие хотя бы раз)
     active_members = db.query(User).filter(
         User.group_id == group_id,
         User.is_verified == True,
-        User.user_responses.any()
+        User.is_group_member == True,
+        User.responses.any()
     ).count()
     
     # Ответы за указанную дату
@@ -283,6 +287,7 @@ async def get_group_stats(
     
     responses_today = db.query(UserResponse).join(User).filter(
         User.group_id == group_id,
+        User.is_group_member == True,
         UserResponse.created_at >= start_datetime,
         UserResponse.created_at <= end_datetime
     ).count()

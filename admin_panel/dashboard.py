@@ -697,7 +697,7 @@ with tab1:
         """, unsafe_allow_html=True)
     else:
         # Фильтруем только активированных участников
-        activated_users = users_df[users_df['is_verified'] == 1]
+        activated_users = users_df[(users_df['is_verified'] == 1) & (users_df['is_group_member'] == 1)]
         
         if activated_users.empty:
             st.markdown("""
@@ -1226,7 +1226,7 @@ with tab3:
             """, unsafe_allow_html=True)
         
         with col2:
-            activated_users = len(users_df[users_df['is_verified'] == 1])
+            activated_users = len(users_df[(users_df['is_verified'] == 1) & (users_df['is_group_member'] == 1)])
             st.markdown(f"""
             <div class="metric-card">
                 <h3 style="color: var(--success-color); margin: 0; font-size: 2rem;">{activated_users}</h3>
@@ -1235,7 +1235,7 @@ with tab3:
             """, unsafe_allow_html=True)
         
         with col3:
-            active_users = len(users_df[(users_df['is_active'] == 1) & (users_df['is_verified'] == 1)])
+            active_users = len(users_df[(users_df['is_active'] == 1) & (users_df['is_verified'] == 1) & (users_df['is_group_member'] == 1)])
             st.markdown(f"""
             <div class="metric-card">
                 <h3 style="color: var(--warning-color); margin: 0; font-size: 2rem;">{active_users}</h3>
@@ -1244,7 +1244,7 @@ with tab3:
             """, unsafe_allow_html=True)
         
         with col4:
-            responded_today = len(users_df[users_df['has_responded_today'] == 1])
+            responded_today = len(users_df[(users_df['has_responded_today'] == 1) & (users_df['is_group_member'] == 1)])
             st.markdown(f"""
             <div class="metric-card">
                 <h3 style="color: var(--secondary-color); margin: 0; font-size: 2rem;">{responded_today}</h3>

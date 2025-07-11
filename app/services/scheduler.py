@@ -571,8 +571,9 @@ def send_repeat_questions():
         # Получаем активных И активированных пользователей
         active_users = db.query(User).filter(
             User.is_active == True,
-            User.is_verified == True,  # Проверяем активацию
-            User.is_group_member == True  # Проверяем участие в команде
+            User.is_verified == True,
+            User.is_group_member == True,
+            User.has_responded_today == False
         ).all()
         
         if not active_users:

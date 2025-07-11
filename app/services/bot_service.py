@@ -185,14 +185,70 @@ class BotService:
                 "Просто отвечайте на мои сообщения своими рабочими планами.\n\n"
                 "✅ Ваш аккаунт активен и готов к работе!"
             )
-        else:
+            return
+        
+        # НОВАЯ ЛОГИКА: Создаем или обновляем пользователя для админа
+        if not db_user or not db_user.is_verified:
+            if user.username:
+                pending_user = db.query(User).filter(
+                    User.username == user.username,
+                    User.user_id.is_(None)
+                ).first()
+                
+                if pending_user:
+                    # Активируем существующую запись админа без user_id
+                    pending_user.user_id = str(user.id)
+                    pending_user.is_verified = True
+                    pending_user.is_active = True
+                    pending_user.is_group_member = False  # Не добавляем как участника группы
+                    if user.first_name:
+                        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+                        pending_user.full_name = full_name
+                    db.commit()
+                    db.refresh(pending_user)
+                    db_user = pending_user
+                    logger.info(f"Activated pending admin user @{user.username} with user_id {user.id}")
+                    
+                    # Уведомление для админа
+                    bot.reply_to(
+                        message,
+                        f"✅ Добро пожаловать, @{user.username}! "
+                        "Ваш аккаунт администратора активирован. "
+                        "Вы будете получать сводки от групп, где вы админ."
+                    )
+                    return
+                
+            # Если не нашли pending, создаем нового пользователя (не админ?)
+            db_user = User(
+                user_id=str(user.id),
+                username=user.username,
+                is_verified=True,
+                is_active=True,
+                is_group_member=False
+            )
+            if user.first_name:
+                full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+                db_user.full_name = full_name
+            db.add(db_user)
+            db.commit()
+            db.refresh(db_user)
+            
+            # Стандартное сообщение для нового пользователя
             bot.reply_to(
                 message,
-                "👋 Привет! Для использования бота перейдите по ссылке активации от администратора.\n\n"
-                f"📧 Ваш @username: @{user.username or 'не_указан'}\n"
-                f"🆔 Ваш ID: {user.id}\n\n"
-                "Если ссылка активации не работает, обратитесь к администратору."
+                "✅ Ваш аккаунт успешно активирован! "
+                "Теперь вы можете получать уведомления."
             )
+            return
+        
+        # Если пользователь не найден или не активирован (fallback)
+        bot.reply_to(
+            message,
+            "👋 Привет! Для использования бота перейдите по ссылке активации от администратора.\n\n"
+            f"📧 Ваш @username: @{user.username or 'не_указан'}\n"
+            f"🆔 Ваш ID: {user.id}\n\n"
+            "Если ссылка активации не работает, обратитесь к администратору."
+        )
 
     def _activate_user_with_token(self, activation_token, telegram_user, db, bot, message):
         """Активирует пользователя через токен активации группы.
@@ -275,6 +331,14 @@ class BotService:
                     User.user_id != str(telegram_user.id)
                 ).first()
             
+            # НОВАЯ ЛОГИКА: Проверяем, существует ли запись с этим username без user_id (созданная при смене админа)
+            pending_user_by_username = None
+            if not existing_user_by_id and telegram_user.username:
+                pending_user_by_username = db.query(User).filter(
+                    User.username == telegram_user.username,
+                    User.user_id.is_(None)
+                ).first()
+            
             # Определяем пользователя для активации
             if existing_user_by_id:
                 # Активируем существующего пользователя по user_id
@@ -287,6 +351,18 @@ class BotService:
                 if telegram_user.username and not existing_user_by_username:
                     db_user.username = telegram_user.username
                     
+            elif pending_user_by_username:
+                # Обновляем существующую запись без user_id
+                db_user = pending_user_by_username
+                db_user.user_id = str(telegram_user.id)
+                db_user.is_verified = True
+                db_user.activation_token = None
+                db_user.group_id = target_group.id
+                db_user.is_group_member = False
+                # Обновляем full_name
+                if telegram_user.first_name:
+                    full_name = f"{telegram_user.first_name or ''} {telegram_user.last_name or ''}".strip()
+                    db_user.full_name = full_name
             else:
                 # Создаем нового пользователя
                 # Username устанавливаем только если он не занят
@@ -302,8 +378,8 @@ class BotService:
                 )
                 db.add(db_user)
             
-            # Обновляем full_name
-            if telegram_user.first_name:
+            # Обновляем full_name (если не обновили выше)
+            if telegram_user.first_name and not pending_user_by_username:  # Избегаем двойного обновления
                 full_name = f"{telegram_user.first_name or ''} {telegram_user.last_name or ''}".strip()
                 db_user.full_name = full_name
             
