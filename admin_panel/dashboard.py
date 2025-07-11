@@ -834,7 +834,8 @@ with tab2:
                         with col2:
                             admin_full_name = st.text_input("Полное имя администратора", placeholder="Иван Иванов")
                             morning_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
-                            morning_minute = st.selectbox("Минута рассылки", options=[0, 15, 30, 45], index=2)
+                            minutes_options = list(range(0, 60, 5))
+                            morning_minute = st.selectbox("Минута рассылки", options=minutes_options, index=minutes_options.index(30))
                         
                         description = st.text_area("Описание группы (необязательно)", placeholder="Краткое описание группы...")
                         
@@ -893,7 +894,8 @@ with tab2:
                         with col1:
                             global_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
                         with col2:
-                            global_minute = st.selectbox("Минута рассылки", options=[0, 15, 30, 45], index=2)
+                            minutes_options = list(range(0, 60, 5))
+                            global_minute = st.selectbox("Минута рассылки", options=minutes_options, index=minutes_options.index(30))
                         with col3:
                             global_timezone = st.selectbox(
                                 "Временная зона",
@@ -947,9 +949,12 @@ with tab2:
                                     progress_bar.empty()
                                     
                                     if success_count > 0:
-                                        st.success(f"✅ Расписание обновлено для {success_count}/{len(groups_data)} групп!")
-                                        if error_count == 0:
-                                            st.balloons()
+                                        success_placeholder = st.success(f"✅ Расписание обновлено для {success_count}/{len(groups_data)} групп!")
+                                        # if error_count == 0:
+                                        #     st.balloons()
+                                        # Показываем уведомление ~1.5 cек
+                                        time.sleep(1.5)
+                                        success_placeholder.empty()
                                         st.session_state.show_global_schedule = False
                                         st.rerun()
                                     else:
@@ -1027,10 +1032,11 @@ with tab2:
                                         index=group['morning_hour'],
                                         key=f"hour_{group['id']}"
                                     )
+                                    minutes_options = list(range(0, 60, 5))
                                     new_minute = st.selectbox(
                                         "Минута рассылки", 
-                                        options=[0, 15, 30, 45], 
-                                        index=[0, 15, 30, 45].index(group['morning_minute']) if group['morning_minute'] in [0, 15, 30, 45] else 0,
+                                        options=minutes_options,
+                                        index=minutes_options.index(group['morning_minute']) if group['morning_minute'] in minutes_options else 0,
                                         key=f"minute_{group['id']}"
                                     )
                                     new_timezone = st.selectbox(
@@ -1052,8 +1058,10 @@ with tab2:
                                                 timeout=10
                                             )
                                             if schedule_response.status_code == 200:
-                                                st.success(f"✅ Расписание группы '{group['name']}' обновлено! Новое время: {new_hour:02d}:{new_minute:02d} ({new_timezone})")
-                                                st.balloons()
+                                                success_placeholder = st.success(f"✅ Расписание группы '{group['name']}' обновлено! Новое время: {new_hour:02d}:{new_minute:02d} ({new_timezone})")
+                                                # st.balloons()
+                                                time.sleep(2.5)
+                                                success_placeholder.empty()
                                                 st.rerun()
                                             else:
                                                 error_data = schedule_response.json()
