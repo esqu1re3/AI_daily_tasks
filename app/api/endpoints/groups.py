@@ -116,6 +116,9 @@ async def update_group(
             detail="Группа не найдена"
         )
     
+    # Сохраняем старый admin_username для последующей обработки
+    old_admin_username = group.admin_username
+    
     # Проверяем уникальность названия (если меняется)
     if group_data.name and group_data.name != group.name:
         existing_group = db.query(Group).filter(
@@ -129,6 +132,7 @@ async def update_group(
             )
     
     # Обрабатываем admin_username (если меняется)
+    admin_changed = False
     if group_data.admin_username:
         clean_username = group_data.admin_username.strip().lstrip('@')
         if not clean_username:
@@ -136,6 +140,41 @@ async def update_group(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username администратора не может быть пустым"
             )
+        
+        # Проверяем, изменился ли администратор
+        if clean_username != old_admin_username:
+            admin_changed = True
+            
+            # Ищем нового администратора в базе
+            new_admin = db.query(User).filter(User.username == clean_username).first()
+            
+            if new_admin:
+                # Если новый админ найден, добавляем его в группу
+                if new_admin.group_id != group_id:
+                    # Убираем из старой группы (если был в другой)
+                    if new_admin.group_id:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"Пользователь @{clean_username} перемещен из группы {new_admin.group_id} в группу {group_id}")
+                    
+                    new_admin.group_id = group_id
+                    new_admin.is_verified = True  # Убеждаемся что админ активирован
+                    new_admin.is_active = True   # Убеждаемся что админ активен
+                    new_admin.is_group_member = True
+            else:
+                # Если новый админ не найден, создаем запись
+                new_admin = User(
+                    username=clean_username,
+                    group_id=group_id,
+                    is_verified=False,  # Будет активирован при первом входе в бот
+                    is_active=True,
+                    is_group_member=True
+                )
+                db.add(new_admin)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Создана запись для нового администратора @{clean_username} группы '{group.name}'")
+        
         group.admin_username = clean_username
     
     # Обновляем остальные поля группы
@@ -151,6 +190,12 @@ async def update_group(
         User.group_id == group_id,
         User.is_verified == True
     ).count()
+    
+    # Логируем изменение администратора
+    if admin_changed:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Администратор группы '{group.name}' изменен с @{old_admin_username} на @{group.admin_username}")
     
     return group
 
