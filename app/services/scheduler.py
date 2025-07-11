@@ -399,6 +399,103 @@ def process_user_response(user, response_text):
     finally:
         db.close()
 
+def send_repeat_questions():
+    """Отправляет повторные вопросы всем активным участникам команды по запросу админа.
+    
+    Выполняет следующие действия:
+    1. Получает список активных и активированных участников
+    2. Отправляет повторный вопрос каждому участнику
+    3. Логирует результаты отправки
+    
+    Функция вызывается при нажатии кнопки "Сбросить ответы дня" в админ панели.
+    Не сбрасывает флаги ответов в базе данных - только отправляет сообщения.
+    
+    Returns:
+        dict: Словарь с результатами отправки {"success_count": int, "total_count": int, "errors": list}
+    
+    Examples:
+        >>> result = send_repeat_questions()
+        >>> print(f"Отправлено {result['success_count']}/{result['total_count']} сообщений")
+    """
+    _ensure_services_initialized()
+    db = SessionLocal()
+    try:
+        # Получаем активных И активированных пользователей
+        active_users = db.query(User).filter(
+            User.is_active == True,
+            User.is_verified == True,  # Проверяем активацию
+            User.is_group_member == True  # Проверяем участие в команде
+        ).all()
+        
+        if not active_users:
+            logger.info("Нет активных активированных участников команды для повторной рассылки")
+            return {"success_count": 0, "total_count": 0, "errors": []}
+        
+        # Формируем сообщение с указанием что это повторная отправка
+        question = "🔄 Повторное напоминание от администратора!\n\n🌅 Мне нужно знать, какие задачи вчера получилось решить и какой план на сегодня. Какие сложности возникли?\n\n📝 Пожалуйста, отправьте ваш отчет."
+        
+        success_count = 0
+        errors = []
+        
+        for user in active_users:
+            try:
+                bot.send_message(
+                    chat_id=int(user.user_id),
+                    text=question
+                )
+                success_count += 1
+                username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
+                logger.info(f"Повторное сообщение отправлено пользователю {username_display}")
+            except Exception as e:
+                username_display = f"@{user.username}" if user.username else f"ID:{user.user_id}"
+                error_msg = f"Ошибка отправки повторного сообщения пользователю {username_display}: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        logger.info(f"Повторная рассылка завершена. Отправлено сообщений: {success_count}/{len(active_users)}")
+        
+        return {
+            "success_count": success_count,
+            "total_count": len(active_users),
+            "errors": errors
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка в повторной рассылке: {e}")
+        return {"success_count": 0, "total_count": 0, "errors": [str(e)]}
+    finally:
+        db.close()
+
+def send_test_message(user_id: str, message: str = "🔔 Тестовое сообщение от бота"):
+    """Отправляет тестовое сообщение конкретному пользователю.
+    
+    Функция для диагностики работы Telegram бота.
+    Позволяет проверить связь с пользователем и корректность настроек.
+    
+    Args:
+        user_id (str): Telegram User ID получателя.
+        message (str): Текст сообщения для отправки.
+    
+    Returns:
+        dict: Результат отправки {"success": bool, "error": str|None}
+    
+    Examples:
+        >>> result = send_test_message("123456789", "Привет!")
+        >>> if result["success"]:
+        ...     print("Сообщение отправлено")
+        ... else:
+        ...     print(f"Ошибка: {result['error']}")
+    """
+    _ensure_services_initialized()
+    try:
+        bot.send_message(chat_id=int(user_id), text=message)
+        logger.info(f"Тестовое сообщение отправлено пользователю {user_id}")
+        return {"success": True, "error": None}
+    except Exception as e:
+        error_msg = f"Ошибка отправки тестового сообщения пользователю {user_id}: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": str(e)}
+
 def start_scheduler():
     """Запускает планировщик задач для утренних опросов.
     
@@ -421,31 +518,40 @@ def start_scheduler():
     """
     _ensure_services_initialized()
     try:
-        # Проверяем, не запущен ли уже планировщик
-        if scheduler.running:
-            logger.info("Scheduler уже запущен, пропускаем инициализацию")
-            return
-            
-        # Удаляем существующие задачи если есть
+        logger.info("🔄 Инициализация планировщика...")
+        
+        # ВСЕГДА удаляем существующие задачи для обновления расписания
         existing_jobs = scheduler.get_jobs()
+        logger.info(f"Найдено существующих задач: {len(existing_jobs)}")
+        
         for job in existing_jobs:
             if job.id == 'morning_questions':
                 scheduler.remove_job(job.id)
-                logger.info("Удалена существующая задача morning_questions")
+                logger.info("✅ Удалена существующая задача morning_questions")
         
-        # Утренняя рассылка в 9:30 по времени Бишкек (UTC+6)
+        # ВСЕГДА добавляем задачу с актуальным временем
         scheduler.add_job(
             send_morning_questions,
             'cron',
-            hour=17,  # 9:30 по Бишкеку
-            minute=50,
+            hour=15,   # 9:30 по Бишкеку (UTC+6)
+            minute=25,
             id='morning_questions',
             timezone='Asia/Bishkek'
         )
+        logger.info("✅ Добавлена задача morning_questions с обновленным расписанием (9:30 Asia/Bishkek)")
         
+        # Запускаем планировщик только если он еще не запущен
         if not scheduler.running:
             scheduler.start()
             logger.info("✅ Scheduler запущен (утренняя рассылка в 9:30 Asia/Bishkek, только активированным участникам)")
+        else:
+            logger.info("✅ Scheduler уже работает, задачи обновлены (утренняя рассылка в 9:30 Asia/Bishkek)")
+        
+        # Выводим все активные задачи для диагностики
+        active_jobs = scheduler.get_jobs()
+        logger.info(f"📋 Активных задач в планировщике: {len(active_jobs)}")
+        for job in active_jobs:
+            logger.info(f"   - {job.id}: {job.next_run_time}")
         
     except Exception as e:
         logger.error(f"❌ Ошибка запуска планировщика: {e}")
@@ -472,5 +578,70 @@ def stop_scheduler():
     except Exception as e:
         logger.error(f"❌ Ошибка остановки планировщика: {e}")
 
+def get_scheduler_info():
+    """Получает информацию о планировщике и активных задачах.
+    
+    Возвращает статус планировщика, список активных задач
+    и время их следующего выполнения для диагностики.
+    
+    Returns:
+        dict: Информация о планировщике {
+            "running": bool,
+            "jobs_count": int,
+            "jobs": list,
+            "next_morning_questions": str|None
+        }
+    
+    Examples:
+        >>> info = get_scheduler_info()
+        >>> print(f"Планировщик работает: {info['running']}")
+        >>> print(f"Следующая рассылка: {info['next_morning_questions']}")
+    """
+    try:
+        _ensure_services_initialized()
+        
+        if not scheduler:
+            return {
+                "running": False,
+                "jobs_count": 0,
+                "jobs": [],
+                "next_morning_questions": None,
+                "error": "Планировщик не инициализирован"
+            }
+        
+        jobs = scheduler.get_jobs()
+        jobs_info = []
+        next_morning_questions = None
+        
+        for job in jobs:
+            job_info = {
+                "id": job.id,
+                "name": str(job.func.__name__) if hasattr(job.func, '__name__') else str(job.func),
+                "next_run_time": job.next_run_time.strftime('%Y-%m-%d %H:%M:%S %Z') if job.next_run_time else None,
+                "trigger": str(job.trigger)
+            }
+            jobs_info.append(job_info)
+            
+            if job.id == 'morning_questions' and job.next_run_time:
+                next_morning_questions = job.next_run_time.strftime('%Y-%m-%d %H:%M:%S %Z')
+        
+        return {
+            "running": scheduler.running,
+            "jobs_count": len(jobs),
+            "jobs": jobs_info,
+            "next_morning_questions": next_morning_questions,
+            "error": None
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения информации о планировщике: {e}")
+        return {
+            "running": False,
+            "jobs_count": 0,
+            "jobs": [],
+            "next_morning_questions": None,
+            "error": str(e)
+        }
+
 # Экспортируем функцию для обработки ответов пользователей
-__all__ = ['start_scheduler', 'stop_scheduler', 'process_user_response']
+__all__ = ['start_scheduler', 'stop_scheduler', 'process_user_response', 'send_repeat_questions', 'send_test_message', 'get_scheduler_info']

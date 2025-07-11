@@ -9,7 +9,6 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(
-    prefix="/users",
     tags=["users"],
     responses={404: {"description": "Not found"}},
 )
@@ -301,3 +300,111 @@ def get_bot_info():
     except Exception as e:
         logger.error(f"Error getting bot info: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/send-repeat-questions", status_code=200)
+def send_repeat_questions_to_all():
+    """Отправляет повторные сообщения всем активным участникам команды.
+    
+    Эндпоинт вызывается из админ панели при нажатии кнопки "Сбросить ответы дня".
+    Отправляет повторное напоминание о необходимости отправить отчет.
+    
+    Returns:
+        dict: Результат отправки с количеством успешных сообщений и ошибками.
+    
+    Raises:
+        HTTPException: 500 при ошибках отправки сообщений.
+    
+    Examples:
+        >>> # POST /users/send-repeat-questions
+        >>> # Response: {"success_count": 3, "total_count": 3, "errors": []}
+    """
+    try:
+        from app.services.scheduler import send_repeat_questions
+        
+        result = send_repeat_questions()
+        
+        logger.info(f"Повторная рассылка через API: отправлено {result['success_count']}/{result['total_count']} сообщений")
+        
+        return {
+            "message": "Повторная рассылка выполнена",
+            "success_count": result['success_count'],
+            "total_count": result['total_count'],
+            "errors": result['errors']
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка API отправки повторных сообщений: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка отправки сообщений: {str(e)}")
+
+@router.post("/test-message/{user_id}", status_code=200)
+def send_test_message_to_user(user_id: str, message: str = "🔔 Тестовое сообщение от администратора"):
+    """Отправляет тестовое сообщение конкретному пользователю.
+    
+    Эндпоинт для диагностики работы Telegram бота.
+    Позволяет проверить связь с пользователем и корректность настроек.
+    
+    Args:
+        user_id (str): Telegram User ID получателя.
+        message (str): Текст сообщения для отправки.
+    
+    Returns:
+        dict: Результат отправки с информацией об успехе или ошибке.
+    
+    Raises:
+        HTTPException: 500 при ошибках отправки сообщения.
+    
+    Examples:
+        >>> # POST /users/test-message/123456789
+        >>> # Response: {"success": true, "message": "Сообщение отправлено", "error": null}
+    """
+    try:
+        from app.services.scheduler import send_test_message
+        
+        result = send_test_message(user_id, message)
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": f"Тестовое сообщение отправлено пользователю {user_id}",
+                "error": None
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Не удалось отправить сообщение пользователю {user_id}",
+                "error": result["error"]
+            }
+        
+    except Exception as e:
+        logger.error(f"Ошибка API тестирования сообщений: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка отправки тестового сообщения: {str(e)}")
+
+@router.get("/scheduler/info", status_code=200)
+def get_scheduler_status():
+    """Получает информацию о статусе планировщика и активных задачах.
+    
+    Эндпоинт для диагностики работы планировщика.
+    Возвращает информацию о статусе, количестве задач и времени следующей рассылки.
+    
+    Returns:
+        dict: Информация о планировщике с активными задачами и их расписанием.
+    
+    Raises:
+        HTTPException: 500 при ошибках получения информации о планировщике.
+    
+    Examples:
+        >>> # GET /users/scheduler/info
+        >>> # Response: {"running": true, "jobs_count": 1, "next_morning_questions": "2025-01-15 12:47:00 Asia/Bishkek"}
+    """
+    try:
+        from app.services.scheduler import get_scheduler_info
+        
+        info = get_scheduler_info()
+        
+        logger.info(f"Информация о планировщике запрошена: {info['running']}, задач: {info['jobs_count']}")
+        
+        return info
+        
+    except Exception as e:
+        logger.error(f"Ошибка API получения информации о планировщике: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка получения информации о планировщике: {str(e)}")

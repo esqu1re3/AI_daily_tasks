@@ -577,6 +577,7 @@ with tab1:
             with st.spinner("Сброс ответов и отправка сообщений..."):
                 result = reset_daily_responses_and_send_messages()
                 if result["success"]:
+                    st.success(result["message"])
                     if result["details"]:
                         details = result["details"]
                         if details.get("errors"):
@@ -692,6 +693,11 @@ with tab1:
                             action_help = f"Текущий статус: {'Активен' if current_status else 'Деактивирован'}. Нажмите чтобы {'деактивировать' if current_status else 'активировать'}"
                             if st.button(action_text, key=f"toggle_{user['id']}", help=action_help):
                                 if update_user_status(user['id'], new_status):
+                                    status_message = "активирован" if new_status else "деактивирован"
+                                    success_placeholder = st.success(f"✅ Пользователь {status_message}!")
+                                    # Задержка для показа уведомления
+                                    time.sleep(1)
+                                    success_placeholder.empty()
                                     st.rerun()
                                 else:
                                     error_placeholder = st.error("❌ Ошибка обновления статуса")
@@ -724,6 +730,9 @@ with tab1:
                         with col4c:
                             if st.button("🗑️", key=f"delete_{user['id']}", help="Удалить участника из системы"):
                                 if delete_user(user['id']):
+                                    success_placeholder = st.success("🗑️ Участник удален из системы!")
+                                    time.sleep(2)
+                                    success_placeholder.empty()
                                     st.rerun()
                                 else:
                                     error_placeholder = st.error("❌ Ошибка удаления участника")

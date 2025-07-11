@@ -45,9 +45,10 @@ def _init_background_services():
     """Создание БД, запуск планировщика и бота"""
     global _services_initialized
     
-    if _services_initialized:
-        logging.info("Сервисы уже инициализированы, пропускаем")
-        return
+    # Убираем блокировку для корректного перезапуска планировщика
+    # if _services_initialized:
+    #     logging.info("Сервисы уже инициализированы, пропускаем")
+    #     return
     
     import os
 
@@ -60,12 +61,13 @@ def _init_background_services():
         base.Base.metadata.create_all(bind=engine)
         logging.info("✅ База данных инициализирована")
 
-        # Планировщик
+        # Планировщик - ВСЕГДА переинициализируем для обновления расписания
         start_scheduler()
 
-        # Telegram-бот
-        threading.Thread(target=_run_telegram_bot, daemon=True).start()
-        logging.info("✅ Telegram бот запущен в отдельном потоке")
+        # Telegram-бот - запускаем только если еще не запущен
+        if not _services_initialized:
+            threading.Thread(target=_run_telegram_bot, daemon=True).start()
+            logging.info("✅ Telegram бот запущен в отдельном потоке")
         
         _services_initialized = True
         logging.info("✅ Все фоновые сервисы инициализированы")
