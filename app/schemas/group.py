@@ -10,6 +10,7 @@ class GroupBase(BaseModel):
     morning_hour: int = Field(9, ge=0, le=23, description="Час отправки вечерних сообщений (0-23)")
     morning_minute: int = Field(30, ge=0, le=59, description="Минута отправки вечерних сообщений (0-59)")
     timezone: str = Field("Asia/Bishkek", description="Временная зона группы")
+    days_of_week: Optional[List[int]] = Field(default_factory=lambda: [0,1,2,3,4], description="Дни недели для рассылки (0=Пн, 6=Вс)")
 
 
 class GroupCreate(GroupBase):
@@ -26,6 +27,7 @@ class GroupUpdate(BaseModel):
     morning_minute: Optional[int] = Field(None, ge=0, le=59, description="Минута отправки вечерних сообщений")
     timezone: Optional[str] = Field(None, description="Временная зона группы")
     is_active: Optional[bool] = Field(None, description="Активность группы")
+    days_of_week: Optional[List[int]] = Field(None, description="Дни недели для рассылки (0=Пн, 6=Вс)")
 
 
 class GroupResponse(GroupBase):

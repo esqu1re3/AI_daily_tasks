@@ -53,7 +53,8 @@ def create_groups_table():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 morning_hour INTEGER DEFAULT 17,
                 morning_minute INTEGER DEFAULT 30,
-                timezone TEXT DEFAULT 'Asia/Bishkek'
+                timezone TEXT DEFAULT 'Asia/Bishkek',
+                days_of_week TEXT DEFAULT '0,1,2,3,4' NOT NULL
             )
             """)
             

@@ -80,7 +80,8 @@ def run_migration():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 morning_hour INTEGER DEFAULT 17,
                 morning_minute INTEGER DEFAULT 30,
-                timezone VARCHAR DEFAULT 'Asia/Bishkek'
+                timezone VARCHAR DEFAULT 'Asia/Bishkek',
+                days_of_week TEXT DEFAULT '0,1,2,3,4' NOT NULL
             );
         """)
         logger.info("✅ Создана новая таблица groups_new")
@@ -89,13 +90,14 @@ def run_migration():
         cursor.execute("""
             INSERT INTO groups_new (
                 id, name, description, admin_username, activation_token, 
-                is_active, created_at, morning_hour, morning_minute, timezone
+                is_active, created_at, morning_hour, morning_minute, timezone, days_of_week
             )
             SELECT 
                 id, name, description, 
                 COALESCE(admin_username, 'admin_' || id) as admin_username,
                 activation_token, is_active, created_at, 
-                morning_hour, morning_minute, timezone
+                morning_hour, morning_minute, timezone,
+                COALESCE(days_of_week, '0,1,2,3,4')
             FROM groups;
         """)
         

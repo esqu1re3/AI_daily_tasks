@@ -504,6 +504,9 @@ DB_PATH = BASE_DIR / "data" / "reports_backup.sqlite"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+DAYS_OF_WEEK_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+DAYS_OF_WEEK_MAP = {i: label for i, label in enumerate(DAYS_OF_WEEK_LABELS)}
+
 def init_database():
     """Создание базы данных и таблиц если они не существуют"""
     try:
@@ -884,9 +887,10 @@ with tab2:
                             group_name = st.text_input("Название группы", placeholder="Например: Команда разработки")
                             admin_username = st.text_input("Username администратора (без @)", placeholder="admin_user")
                         with col2:
-                            morning_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
+                            morning_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=17)
                             minutes_options = list(range(0, 60, 5))
                             morning_minute = st.selectbox("Минута рассылки", options=minutes_options, index=minutes_options.index(30))
+                            days_selected = st.multiselect("Дни недели рассылки", options=list(range(7)), format_func=lambda x: DAYS_OF_WEEK_MAP[x], default=[0,1,2,3,4])
                         
                         description = st.text_area("Описание группы (необязательно)", placeholder="Краткое описание группы...")
                         
@@ -899,7 +903,8 @@ with tab2:
                                         "description": description if description else None,
                                         "admin_username": admin_username.strip(),
                                         "morning_hour": morning_hour,
-                                        "morning_minute": morning_minute
+                                        "morning_minute": morning_minute,
+                                        "days_of_week": days_selected
                                     }
                                     
                                     try:
@@ -1048,12 +1053,17 @@ with tab2:
                         with col2:
                             admin_name = f"@{group['admin_username']}" if group['admin_username'] else "Не указан"
                             schedule_time = f"{group['morning_hour']:02d}:{group['morning_minute']:02d}"
-                            
+                            # Формируем строку дней недели для отображения
+                            days_of_week = group.get('days_of_week', [0,1,2,3,4])
+                            if isinstance(days_of_week, str):
+                                days_of_week = [int(x) for x in days_of_week.split(',') if x.strip().isdigit()]
+                            days_str = ', '.join([DAYS_OF_WEEK_MAP[d] for d in days_of_week]) if days_of_week else '—'
                             st.markdown(f"""
                             <div style="padding: 1rem 0;">
                                 <p style="margin: 0; color: var(--text-primary); font-weight: 500;">👤 {admin_name}</p>
                                 <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem;">
-                                    ⏰ Рассылка: {schedule_time} ({group['timezone']})
+                                    ⏰ Рассылка: {schedule_time} ({group['timezone']})<br>
+                                    <span style='color: var(--primary-color);'>Дни: {days_str}</span>
                                 </p>
                                 <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem;">
                                     📅 Создана: {pd.to_datetime(group['created_at']).strftime('%d.%m.%Y')}
@@ -1094,6 +1104,16 @@ with tab2:
                                         index=["Asia/Bishkek", "Asia/Almaty", "Asia/Tashkent", "Europe/Moscow", "UTC"].index(group['timezone']) if group['timezone'] in ["Asia/Bishkek", "Asia/Almaty", "Asia/Tashkent", "Europe/Moscow", "UTC"] else 0,
                                         key=f"tz_{group['id']}"
                                     )
+                                    days_selected = st.multiselect(
+                                        "Дни недели рассылки",
+                                        options=list(range(7)),
+                                        format_func=lambda x: DAYS_OF_WEEK_MAP[x],
+                                        default=group.get('days_of_week', [0,1,2,3,4]),
+                                        key=f"days_{group['id']}"
+                                    )
+                                    # Показываем выбранные дни недели строкой
+                                    days_selected_str = ', '.join([DAYS_OF_WEEK_MAP[d] for d in days_selected]) if days_selected else '—'
+                                    st.caption(f"Выбрано: {days_selected_str}")
                                     
                                     if st.form_submit_button("✅ Обновить расписание", type="primary", use_container_width=True):
                                         try:
@@ -1102,7 +1122,8 @@ with tab2:
                                                 params={
                                                     "morning_hour": new_hour,
                                                     "morning_minute": new_minute,
-                                                    "timezone": new_timezone
+                                                    "timezone": new_timezone,
+                                                    "days_of_week": ','.join(str(d) for d in days_selected)
                                                 },
                                                 timeout=10
                                             )

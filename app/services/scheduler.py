@@ -694,8 +694,10 @@ def start_scheduler():
             for group in active_groups:
                 try:
                     job_id = f'morning_group_{group.id}'
-                    
-                    # Создаем задачу утренней рассылки для группы
+                    # days_of_week поддержка
+                    day_of_week = None
+                    if hasattr(group, 'days_of_week') and group.days_of_week:
+                        day_of_week = group.days_of_week
                     scheduler.add_job(
                         send_morning_questions_to_group,
                         'cron',
@@ -703,7 +705,8 @@ def start_scheduler():
                         hour=group.morning_hour,
                         minute=group.morning_minute,
                         id=job_id,
-                        timezone=group.timezone
+                        timezone=group.timezone,
+                        day_of_week=day_of_week if day_of_week else None
                     )
                     
                     schedule_time = f"{group.morning_hour:02d}:{group.morning_minute:02d} {group.timezone}"

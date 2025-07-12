@@ -60,7 +60,7 @@ class Group(Base):
     morning_hour = Column(Integer, default=17)  # Час рассылки (0-23)
     morning_minute = Column(Integer, default=30)  # Минута рассылки (0-59)
     timezone = Column(String, default="Asia/Bishkek")  # Временная зона
-    
+    days_of_week = Column(String, default="0,1,2,3,4", nullable=False)  # Дни недели (0=Пн, 6=Вс)
     # Связь с участниками группы
     members = relationship("User", back_populates="group", cascade="all, delete-orphan")
 
@@ -102,22 +102,15 @@ class Group(Base):
         return f"https://t.me/{bot_username}?start={self.activation_token}"
 
     def get_schedule_cron(self):
-        """Возвращает cron-выражение для планировщика группы.
-        
-        Returns:
-            dict: Параметры для APScheduler с временем рассылки группы.
-        
-        Examples:
-            >>> group = Group(morning_hour=10, morning_minute=15, admin_username="admin")
-            >>> cron = group.get_schedule_cron()
-            >>> print(cron)
-            {'hour': 10, 'minute': 15, 'timezone': 'Asia/Bishkek'}
-        """
-        return {
+        """Возвращает cron-выражение для планировщика группы."""
+        cron = {
             'hour': self.morning_hour,
             'minute': self.morning_minute,
             'timezone': self.timezone
         }
+        if self.days_of_week:
+            cron['day_of_week'] = self.days_of_week
+        return cron
 
     def __repr__(self):
         return f"<Group(id={self.id}, name='{self.name}', admin_username='{self.admin_username}', active={self.is_active})>" 

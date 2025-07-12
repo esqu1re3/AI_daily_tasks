@@ -15,6 +15,14 @@ from app.schemas.group import (
 router = APIRouter()
 
 
+# === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ===
+def parse_days_of_week(group):
+    if hasattr(group, 'days_of_week') and group.days_of_week:
+        if isinstance(group.days_of_week, str):
+            group.days_of_week = [int(x) for x in group.days_of_week.split(',') if x.strip().isdigit()]
+    return group
+
+
 @router.get("/", response_model=List[GroupResponse])
 async def get_groups(
     skip: int = Query(0, ge=0, description="Количество групп для пропуска"),
@@ -56,6 +64,7 @@ async def get_groups(
             User.group_id == group.id,
             User.is_verified == True
         ).count()
+        parse_days_of_week(group)
     
     return groups
 
@@ -79,6 +88,7 @@ async def get_group(group_id: int, db: Session = Depends(get_db)):
     
     group.members_count = len(members)
     group.members = members
+    parse_days_of_week(group)
     
     return group
 
@@ -133,7 +143,11 @@ async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
     # Создаем новую группу
     group_dict = group_data.model_dump()
     group_dict['admin_username'] = clean_username  # Используем очищенный username
-    
+    # days_of_week: преобразуем в строку для хранения
+    if 'days_of_week' in group_dict and group_dict['days_of_week']:
+        group_dict['days_of_week'] = ','.join(str(d) for d in group_dict['days_of_week'])
+    else:
+        group_dict['days_of_week'] = '0,1,2,3,4'
     new_group = Group(**group_dict)
     db.add(new_group)
     db.commit()
@@ -162,6 +176,7 @@ async def create_group(group_data: GroupCreate, db: Session = Depends(get_db)):
     logger.info(f"Created/Updated pending admin @{clean_username} for group '{new_group.name}'")
 
     new_group.members_count = 0
+    parse_days_of_week(new_group)
 
     # Restart scheduler to add the new group's schedule
     from app.services.scheduler import start_scheduler
@@ -247,6 +262,9 @@ async def update_group(
     
     # Обновляем остальные поля группы
     update_data = group_data.model_dump(exclude_unset=True, exclude={'admin_username'})
+    # days_of_week поддержка
+    if 'days_of_week' in update_data and update_data['days_of_week'] is not None:
+        update_data['days_of_week'] = ','.join(str(d) for d in update_data['days_of_week'])
     for field, value in update_data.items():
         setattr(group, field, value)
     
@@ -266,25 +284,27 @@ async def update_group(
         logger = logging.getLogger(__name__)
         logger.info(f"Администратор группы '{group.name}' изменен с @{old_admin_username} на @{group.admin_username}")
     
+    parse_days_of_week(group)
     return group
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_group(group_id: int, db: Session = Depends(get_db)):
-    """Удалить группу (деактивировать)"""
+    """Удалить группу (полностью, каскадно удаляя всех пользователей и их ответы)"""
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Группа не найдена"
         )
-    
-    # Деактивируем группу вместо удаления
-    group.is_active = False
-    
-    # Убираем пользователей из группы
-    db.query(User).filter(User.group_id == group_id).update({"group_id": None})
-    
+    # Каскадно удаляем всех пользователей этой группы и их ответы
+    users = db.query(User).filter(User.group_id == group_id).all()
+    for user in users:
+        # Удаляем все ответы пользователя
+        db.query(UserResponse).filter(UserResponse.user_id == user.id).delete()
+        db.delete(user)
+    # Удаляем саму группу
+    db.delete(group)
     db.commit()
 
 
@@ -308,6 +328,7 @@ async def regenerate_activation_token(group_id: int, db: Session = Depends(get_d
         User.is_verified == True
     ).count()
     
+    parse_days_of_week(group)
     return group
 
 
@@ -416,6 +437,7 @@ async def update_group_schedule(
     morning_hour: int = Query(..., ge=0, le=23, description="Час отправки вечерних сообщений (0-23)"),
     morning_minute: int = Query(..., ge=0, le=59, description="Минута отправки вечерних сообщений (0-59)"),
     timezone: str = Query("Asia/Bishkek", description="Временная зона группы"),
+    days_of_week: Optional[str] = Query(None, description="Дни недели для рассылки (например, '0,1,2,3,4')"),
     db: Session = Depends(get_db)
 ):
     """Обновить расписание рассылки для группы"""
@@ -431,6 +453,8 @@ async def update_group_schedule(
     group.morning_hour = morning_hour
     group.morning_minute = morning_minute
     group.timezone = timezone
+    if days_of_week is not None:
+        group.days_of_week = days_of_week
     
     db.commit()
     db.refresh(group)
@@ -451,4 +475,5 @@ async def update_group_schedule(
         User.is_verified == True
     ).count()
     
+    parse_days_of_week(group)
     return group 
