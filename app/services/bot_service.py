@@ -279,9 +279,9 @@ class BotService:
                 return
             
             # Ищем пользователя по user_id
-            existing_user_by_id = db.query(User).filter(User.user_id == str(telegram_user.id)).first()
+            db_user = db.query(User).filter(User.user_id == str(telegram_user.id)).first()
             
-            if existing_user_by_id and existing_user_by_id.is_verified:
+            if db_user and db_user.is_verified:
                 schedule_time = f"{target_group.morning_hour:02d}:{target_group.morning_minute:02d}"
                 bot.reply_to(
                     message,
@@ -289,6 +289,21 @@ class BotService:
                     f"Ежедневно в {schedule_time} я буду присылать вопросы о планах."
                 )
                 return
+            
+            # ===== NEW CODE: Handle pending user by username =====
+            pending_user = None
+            if not db_user and telegram_user.username:
+                pending_user = db.query(User).filter(
+                    User.username == telegram_user.username,
+                    User.user_id.is_(None)
+                ).first()
+                
+            if pending_user:
+                db_user = pending_user
+                db_user.user_id = str(telegram_user.id)
+                db_user.is_verified = True
+                db_user.activation_token = None
+                db_user.group_id = target_group.id
             
             # Проверяем, не занят ли username
             existing_user_by_username = None
@@ -299,8 +314,7 @@ class BotService:
                 ).first()
             
             # Определяем пользователя
-            if existing_user_by_id:
-                db_user = existing_user_by_id
+            if db_user:
                 db_user.is_verified = True
                 db_user.activation_token = None
                 db_user.group_id = target_group.id
