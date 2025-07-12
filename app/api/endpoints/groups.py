@@ -17,6 +17,25 @@ router = APIRouter()
 
 # === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ===
 def parse_days_of_week(group):
+    """Преобразует поле days_of_week группы из строки в список целых чисел.
+    
+    Выполняет следующие действия:
+    1. Проверяет наличие атрибута days_of_week у объекта group
+    2. Если days_of_week — строка, преобразует её в список целых чисел (например, '0,1,2,3,4' → [0,1,2,3,4])
+    3. Возвращает модифицированный объект group
+    
+    Args:
+        group: Объект группы (SQLAlchemy или Pydantic), у которого есть поле days_of_week
+    
+    Returns:
+        group: Тот же объект, но с days_of_week в виде списка int, если было преобразование
+    
+    Examples:
+        >>> group.days_of_week = '0,1,2,3,4'
+        >>> group = parse_days_of_week(group)
+        >>> print(group.days_of_week)
+        [0, 1, 2, 3, 4]
+    """
     if hasattr(group, 'days_of_week') and group.days_of_week:
         if isinstance(group.days_of_week, str):
             group.days_of_week = [int(x) for x in group.days_of_week.split(',') if x.strip().isdigit()]
@@ -290,7 +309,27 @@ async def update_group(
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_group(group_id: int, db: Session = Depends(get_db)):
-    """Удалить группу (полностью, каскадно удаляя всех пользователей и их ответы)"""
+    """Удаляет группу и все связанные с ней данные.
+    
+    Выполняет следующие действия:
+    1. Находит группу по group_id
+    2. Каскадно удаляет всех пользователей этой группы и их ответы
+    3. Удаляет саму группу
+    
+    Args:
+        group_id (int): Идентификатор группы для удаления
+        db (Session): Сессия базы данных
+    
+    Returns:
+        None
+    
+    Raises:
+        HTTPException: 404 если группа не найдена
+    
+    Examples:
+        >>> # DELETE /api/groups/1
+        >>> # Response: HTTP 204 No Content
+    """
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
         raise HTTPException(
@@ -310,24 +349,42 @@ async def delete_group(group_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{group_id}/regenerate-token", response_model=GroupResponse)
 async def regenerate_activation_token(group_id: int, db: Session = Depends(get_db)):
-    """Перегенерировать токен активации группы"""
+    """Перегенерирует токен активации для группы.
+    
+    Выполняет следующие действия:
+    1. Находит группу по group_id
+    2. Генерирует новый уникальный токен активации
+    3. Сохраняет изменения в базе данных
+    4. Возвращает обновлённую информацию о группе
+    
+    Args:
+        group_id (int): Идентификатор группы
+        db (Session): Сессия базы данных
+    
+    Returns:
+        GroupResponse: Группа с новым токеном активации
+    
+    Raises:
+        HTTPException: 404 если группа не найдена
+    
+    Examples:
+        >>> # POST /api/groups/1/regenerate-token
+        >>> # Response: GroupResponse с новым activation_token
+    """
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Группа не найдена"
         )
-    
     # Генерируем новый токен
     group.activation_token = Group.generate_activation_token()
     db.commit()
     db.refresh(group)
-    
     group.members_count = db.query(User).filter(
         User.group_id == group_id,
         User.is_verified == True
     ).count()
-    
     parse_days_of_week(group)
     return group
 
@@ -338,24 +395,43 @@ async def get_group_stats(
     target_date: Optional[date] = Query(None, description="Дата для статистики (по умолчанию сегодня)"),
     db: Session = Depends(get_db)
 ):
-    """Получить статистику группы"""
+    """Получает статистику по группе за выбранную дату.
+    
+    Выполняет следующие действия:
+    1. Находит группу по group_id
+    2. Считает общее количество участников, активных участников и количество ответов за дату
+    3. Вычисляет процент ответивших
+    4. Возвращает агрегированную статистику
+    
+    Args:
+        group_id (int): Идентификатор группы
+        target_date (date, optional): Дата для статистики (по умолчанию сегодня)
+        db (Session): Сессия базы данных
+    
+    Returns:
+        GroupStats: Статистика по группе
+    
+    Raises:
+        HTTPException: 404 если группа не найдена
+    
+    Examples:
+        >>> # GET /api/groups/1/stats?target_date=2024-07-10
+        >>> # Response: GroupStats
+    """
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Группа не найдена"
         )
-    
     if not target_date:
         target_date = date.today()
-    
     # Общее количество участников
     total_members = db.query(User).filter(
         User.group_id == group_id,
         User.is_verified == True,
         User.is_group_member == True
     ).count()
-    
     # Активные участники (ответившие хотя бы раз)
     active_members = db.query(User).filter(
         User.group_id == group_id,
@@ -363,21 +439,17 @@ async def get_group_stats(
         User.is_group_member == True,
         User.responses.any()
     ).count()
-    
     # Ответы за указанную дату
     start_datetime = datetime.combine(target_date, datetime.min.time())
     end_datetime = datetime.combine(target_date, datetime.max.time())
-    
     responses_today = db.query(UserResponse).join(User).filter(
         User.group_id == group_id,
         User.is_group_member == True,
         UserResponse.created_at >= start_datetime,
         UserResponse.created_at <= end_datetime
     ).count()
-    
     # Вычисляем процент ответивших
     response_rate = (responses_today / total_members * 100) if total_members > 0 else 0
-    
     return GroupStats(
         group_id=group_id,
         group_name=group.name,
@@ -394,20 +466,41 @@ async def join_group_by_token(
     user_id: str = Query(..., description="Telegram User ID пользователя"),
     db: Session = Depends(get_db)
 ):
-    """Присоединиться к группе по токену активации"""
+    """Позволяет пользователю присоединиться к группе по токену активации.
     
+    Выполняет следующие действия:
+    1. Находит группу по токену активации
+    2. Находит пользователя по user_id
+    3. Проверяет, не состоит ли пользователь уже в группе
+    4. Добавляет пользователя в группу
+    5. Возвращает результат операции
+    
+    Args:
+        activation_data (GroupActivation): Данные с токеном активации
+        user_id (str): Telegram User ID пользователя
+        db (Session): Сессия базы данных
+    
+    Returns:
+        dict: Информация о результате присоединения
+    
+    Raises:
+        HTTPException: 404 если группа или пользователь не найдены
+    
+    Examples:
+        >>> # POST /api/groups/join
+        >>> {"activation_token": "..."}, user_id=123456789
+        >>> # Response: {"message": "Вы успешно присоединились...", ...}
+    """
     # Находим группу по токену
     group = db.query(Group).filter(
         Group.activation_token == activation_data.activation_token,
         Group.is_active == True
     ).first()
-    
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Недействительный токен активации или группа неактивна"
         )
-    
     # Находим пользователя
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
@@ -415,15 +508,12 @@ async def join_group_by_token(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден"
         )
-    
     # Проверяем, не состоит ли уже в группе
     if user.group_id == group.id:
         return {"message": f"Вы уже являетесь участником группы '{group.name}'"}
-    
     # Добавляем пользователя в группу
     user.group_id = group.id
     db.commit()
-    
     return {
         "message": f"Вы успешно присоединились к группе '{group.name}'",
         "group_id": group.id,
@@ -440,25 +530,49 @@ async def update_group_schedule(
     days_of_week: Optional[str] = Query(None, description="Дни недели для рассылки (например, '0,1,2,3,4')"),
     db: Session = Depends(get_db)
 ):
-    """Обновить расписание рассылки для группы"""
+    """Обновляет расписание рассылки для группы.
     
+    Выполняет следующие действия:
+    1. Находит группу по group_id
+    2. Обновляет параметры расписания (время, дни недели, временную зону)
+    3. Сохраняет изменения в базе данных
+    4. Перезапускает планировщик для применения изменений
+    5. Возвращает обновлённую информацию о группе
+    
+    Args:
+        group_id (int): Идентификатор группы
+        morning_hour (int): Час рассылки
+        morning_minute (int): Минута рассылки
+        timezone (str): Временная зона
+        days_of_week (str, optional): Дни недели для рассылки
+        db (Session): Сессия базы данных
+    
+    Returns:
+        GroupResponse: Группа с обновлённым расписанием
+    
+    Raises:
+        HTTPException: 404 если группа не найдена
+    
+    Examples:
+        >>> # PUT /api/groups/1/schedule?morning_hour=10&morning_minute=0&timezone=Asia/Bishkek&days_of_week=0,1,2,3,4
+        >>> # Response: GroupResponse
+    Note:
+        После изменения расписания планировщик автоматически перезапускается для применения новых настроек.
+    """
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Группа не найдена"
         )
-    
     # Обновляем расписание группы
     group.morning_hour = morning_hour
     group.morning_minute = morning_minute
     group.timezone = timezone
     if days_of_week is not None:
         group.days_of_week = days_of_week
-    
     db.commit()
     db.refresh(group)
-    
     # Перезапускаем планировщик для применения изменений
     try:
         from app.services.scheduler import start_scheduler
@@ -468,12 +582,10 @@ async def update_group_schedule(
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Ошибка перезапуска планировщика после изменения расписания группы {group_id}: {e}")
-    
     # Добавляем количество участников
     group.members_count = db.query(User).filter(
         User.group_id == group_id,
         User.is_verified == True
     ).count()
-    
     parse_days_of_week(group)
     return group 

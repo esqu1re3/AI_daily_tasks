@@ -1,4 +1,17 @@
-# Планировщик вечерних вопросов и сводки через Gemini
+"""
+Планировщик вечерних вопросов и генерации сводок через Gemini AI для команд.
+
+Модуль отвечает за:
+- Автоматическую рассылку вечерних вопросов участникам команд (групп)
+- Сбор и обработку ответов пользователей
+- Генерацию сводок через Gemini AI и отправку их администраторам групп
+- Управление расписанием рассылок для каждой группы (через APScheduler)
+- Диагностику и ручное управление через API и админ-панель
+
+Использует ленивую инициализацию сервисов (Telegram Bot, GeminiService, APScheduler).
+Все публичные функции снабжены подробными докстрингами.
+"""
+
 import asyncio
 import telebot
 import logging
@@ -14,10 +27,10 @@ from app.services.gemini_service import GeminiService
 logger = logging.getLogger(__name__)
 
 # Lazy initialization of services
-bot = None
-gemini_service = None
-scheduler = None
-ADMIN_ID = None
+bot = None  # Экземпляр Telegram бота (инициализируется при первом запуске)
+gemini_service = None  # Экземпляр сервиса Gemini AI (инициализируется при первом запуске)
+scheduler = None  # Экземпляр планировщика задач APScheduler (инициализируется при первом запуске)
+ADMIN_ID = None  # Telegram User ID администратора для получения сводок (берется из настроек)
 
 def _ensure_services_initialized():
     """Обеспечивает инициализацию всех сервисов планировщика.

@@ -22,27 +22,74 @@ class GeminiService:
         >>> response = gemini.generate_text("Hello")
     """
     def __init__(self):
+        """Инициализирует сервис Gemini.
+        
+        Выполняет следующие действия:
+        1. Формирует URL для обращения к Gemini API с учетом модели и ключа
+        2. Логирует инициализацию
+        
+        Args:
+            Нет
+        
+        Returns:
+            None
+        
+        Examples:
+            >>> service = GeminiService()
+        """
         logger.debug(f"Initializing GeminiService with model: {settings.GEMINI_MODEL}")
-        # Store API key securely without logging it
         self.api_url = f"https://generativelanguage.googleapis.com/v1/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
 
     def _post_process_text(self, text: str) -> str:
-        """Постобработка текста от Gemini: удаление звездочек и очистка форматирования"""
+        """Постобрабатывает текст, полученный от Gemini API.
+        
+        Выполняет следующие действия:
+        1. Проверяет, что текст не пустой
+        2. Удаляет все символы '*' (звездочки, используемые для markdown)
+        3. Возвращает очищенный текст
+        
+        Args:
+            text (str): Исходный текст от Gemini
+        
+        Returns:
+            str: Очищенный текст без звездочек
+        
+        Examples:
+            >>> _post_process_text('**Hello**')
+            'Hello'
+        """
         if not text:
             return text
-            
-        # Удаляем все звездочки (используемые для markdown форматирования)
         cleaned_text = text.replace('*', '')
-        
         return cleaned_text
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def generate_text_async(self, prompt: str) -> Optional[str]:
-        logger.debug(f"Sending to Gemini: {prompt[:50]}...")
+        """Асинхронно отправляет промпт в Gemini и возвращает сгенерированный текст.
         
+        Выполняет следующие действия:
+        1. Формирует payload и заголовки
+        2. Отправляет POST-запрос к Gemini API
+        3. Обрабатывает ответ, извлекает текст
+        4. Применяет постобработку
+        5. Возвращает результат или None при ошибке
+        
+        Args:
+            prompt (str): Текст запроса для генерации
+        
+        Returns:
+            Optional[str]: Сгенерированный текст или None при ошибке
+        
+        Raises:
+            Может выбросить исключение при сетевых ошибках (обрабатывается retry)
+        
+        Examples:
+            >>> await service.generate_text_async('Привет!')
+            'Здравствуйте! Чем могу помочь?'
+        """
+        logger.debug(f"Sending to Gemini: {prompt[:50]}...")
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -53,20 +100,13 @@ class GeminiService:
                 ) as response:
                     data = await response.json()
                     logger.debug(f"Gemini raw response: {str(data)[:200]}")
-                    
-                    # Упрощенная обработка ответа
                     if "candidates" in data and data["candidates"]:
                         text = data['candidates'][0]['content']['parts'][0]['text']
-                        
-                        # Применяем постобработку для удаления звездочек
                         cleaned_text = self._post_process_text(text)
-                        
                         logger.debug(f"Gemini response text (cleaned): {cleaned_text[:100]}...")
                         return cleaned_text
-                    
                     logger.warning(f"Unexpected Gemini response: {data}")
                     return None
-                    
         except Exception as e:
             logger.error(f"Gemini API error: {e}\n{traceback.format_exc()}")
             return None
@@ -74,23 +114,25 @@ class GeminiService:
     async def analyze_response_quality_async(self, response_text: str) -> dict:
         """Анализирует качество ответа пользователя через Gemini AI.
         
-        Определяет, является ли ответ достаточно конкретным и информативным
-        для включения в сводку команды.
+        Выполняет следующие действия:
+        1. Формирует промпт для анализа качества
+        2. Отправляет промпт в Gemini
+        3. Парсит результат и возвращает структуру с оценкой
+        4. При ошибке или невозможности анализа — принимает ответ
         
         Args:
-            response_text (str): Текст ответа пользователя для анализа.
+            response_text (str): Текст ответа пользователя для анализа
         
         Returns:
             dict: {
                 "is_acceptable": bool,  # Принимается ли ответ
                 "feedback": str,        # Обратная связь для пользователя
-                "reason": str          # Причина отклонения (если отклонен)
+                "reason": str           # Причина отклонения (если отклонен)
             }
         
         Examples:
-            >>> result = await gemini.analyze_response_quality_async("Работаю")
-            >>> print(result["is_acceptable"])  # False
-            >>> print(result["feedback"])      # "Ответ слишком краткий..."
+            >>> await service.analyze_response_quality_async('Работаю')
+            {'is_acceptable': False, 'feedback': 'Ответ слишком общий...', 'reason': 'too_vague'}
         """
         if not response_text or len(response_text.strip()) < 5:
             return {
@@ -98,7 +140,6 @@ class GeminiService:
                 "feedback": "🤔 Ваш ответ слишком краткий. Пожалуйста, опишите более подробно, над какими конкретными задачами вы планируете работать.",
                 "reason": "too_short"
             }
-        
         prompt = f"""
 Проанализируй качество ответа сотрудника на вопрос о рабочих планах на день.
 
@@ -131,23 +172,18 @@ ACCEPTABLE: нет
 FEEDBACK: Слишком краткий ответ. Опишите ваши планы подробнее.
 REASON: too_short
 """
-        
         try:
             analysis_result = await self.generate_text_async(prompt)
             if not analysis_result:
-                # Fallback если Gemini недоступен
                 return {
-                    "is_acceptable": True,  # Принимаем если не можем проанализировать
+                    "is_acceptable": True,
                     "feedback": "✅ Ваш план принят!",
                     "reason": "gemini_unavailable"
                 }
-            
-            # Парсим ответ Gemini
             lines = analysis_result.strip().split('\n')
             acceptable = None
             feedback = ""
             reason = ""
-            
             for line in lines:
                 line = line.strip()
                 if line.startswith('ACCEPTABLE:'):
@@ -157,24 +193,19 @@ REASON: too_short
                     feedback = line.replace('FEEDBACK:', '').strip()
                 elif line.startswith('REASON:'):
                     reason = line.replace('REASON:', '').strip()
-            
             if acceptable is None:
-                # Не удалось распарсить - принимаем ответ
                 return {
                     "is_acceptable": True,
                     "feedback": "✅ Ваш план принят!",
                     "reason": "parse_error"
                 }
-            
             return {
                 "is_acceptable": acceptable,
                 "feedback": feedback if feedback else ("✅ Отличный план!" if acceptable else "🤔 Пожалуйста, уточните ваш план."),
                 "reason": reason if not acceptable else ""
             }
-            
         except Exception as e:
             logger.error(f"Ошибка анализа качества ответа: {e}")
-            # При ошибке принимаем ответ
             return {
                 "is_acceptable": True,
                 "feedback": "✅ Ваш план принят!",
@@ -182,11 +213,26 @@ REASON: too_short
             }
 
     def analyze_response_quality(self, response_text: str) -> dict:
-        """Синхронная версия анализа качества ответа."""
+        """Синхронно анализирует качество ответа пользователя через Gemini AI.
+        
+        Выполняет следующие действия:
+        1. Запускает асинхронную функцию анализа качества через event loop
+        2. При ошибке event loop — использует ThreadPoolExecutor
+        3. Возвращает результат анализа
+        
+        Args:
+            response_text (str): Текст ответа пользователя для анализа
+        
+        Returns:
+            dict: Результат анализа качества (см. analyze_response_quality_async)
+        
+        Examples:
+            >>> service.analyze_response_quality('Работаю')
+            {'is_acceptable': False, ...}
+        """
         try:
             return asyncio.run(self.analyze_response_quality_async(response_text))
         except RuntimeError:
-            # Если есть проблемы с event loop, используем простую обертку
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
@@ -196,11 +242,26 @@ REASON: too_short
                 return future.result(timeout=30)
 
     def generate_text(self, prompt: str) -> Optional[str]:
-        """Синхронная версия для совместимости с тестами"""
+        """Синхронно отправляет промпт в Gemini и возвращает сгенерированный текст.
+        
+        Выполняет следующие действия:
+        1. Запускает асинхронную функцию генерации текста через event loop
+        2. При ошибке event loop — использует ThreadPoolExecutor
+        3. Возвращает результат генерации
+        
+        Args:
+            prompt (str): Текст запроса для генерации
+        
+        Returns:
+            Optional[str]: Сгенерированный текст или None при ошибке
+        
+        Examples:
+            >>> service.generate_text('Привет!')
+            'Здравствуйте! Чем могу помочь?'
+        """
         try:
             return asyncio.run(self.generate_text_async(prompt))
         except RuntimeError:
-            # Если есть проблемы с event loop, используем простую обертку
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(

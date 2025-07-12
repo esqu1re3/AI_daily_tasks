@@ -633,17 +633,54 @@ class BotService:
 
     # Оставляем заглушки для совместимости
     def is_work_related(self, text: Optional[str]) -> bool:
-        """Все сообщения считаем рабочими планами"""
+        """Проверяет, относится ли текст к рабочим планам (заглушка).
+        
+        Всегда возвращает True, считая все сообщения рабочими планами.
+        
+        Args:
+            text (Optional[str]): Текст сообщения пользователя.
+        
+        Returns:
+            bool: True — если сообщение считается рабочим планом.
+        
+        Examples:
+            >>> service.is_work_related("Работаю над проектом X")
+            True
+        """
         return True
 
     async def handle_user_message(self, update, context):
-        """Асинхронная версия для обратной совместимости"""
+        """Асинхронная версия обработчика сообщений пользователя (заглушка).
+        
+        Оставлена для обратной совместимости. Не используется в текущей логике.
+        
+        Args:
+            update: Объект обновления Telegram (не используется).
+            context: Контекст выполнения (не используется).
+        
+        Returns:
+            None
+        """
         pass
 
     def _generate_response_sync(self, text: Optional[str]) -> Optional[str]:
-        """Не используется в новой логике"""
+        """Синхронная генерация ответа (заглушка, не используется).
+        
+        Args:
+            text (Optional[str]): Текст запроса.
+        
+        Returns:
+            Optional[str]: None (функция не используется).
+        """
         return None
 
     async def _generate_response(self, text: Optional[str]) -> Optional[str]:
-        """Не используется в новой логике"""
+        """Асинхронная генерация ответа (заглушка, не используется).
+        
+        Args:
+            text (Optional[str]): Текст запроса.
+        
+        Returns:
+            Optional[str]: None (функция не используется).
+        """
         return None
