@@ -941,7 +941,7 @@ with tab2:
                         col1, col2, col3 = st.columns(3)
                         
                         with col1:
-                            global_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=9)
+                            global_hour = st.selectbox("Час рассылки", options=list(range(0, 24)), index=17)
                         with col2:
                             minutes_options = list(range(0, 60, 5))
                             global_minute = st.selectbox("Минута рассылки", options=minutes_options, index=minutes_options.index(30))
