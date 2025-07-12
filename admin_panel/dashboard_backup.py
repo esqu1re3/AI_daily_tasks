@@ -10,6 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit.components.v1 as components
+import pytz
 
 # Настройки страницы
 st.set_page_config(
@@ -482,6 +483,8 @@ st.markdown("""
 DAYS_OF_WEEK_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 DAYS_OF_WEEK_MAP = {i: label for i, label in enumerate(DAYS_OF_WEEK_LABELS)}
 
+BISHKEK_TZ = pytz.timezone('Asia/Bishkek')
+
 def copy_to_clipboard_button(text: str, button_label: str = "📋 Копировать"):
     """Render a copy button that shows a short confirmation message after copying."""
     components.html(
@@ -499,6 +502,15 @@ def copy_to_clipboard_button(text: str, button_label: str = "📋 Копиров
         """,
         height=40,
     )
+
+def to_bishkek(dt):
+    if not dt:
+        return ''
+    if isinstance(dt, str):
+        dt = pd.to_datetime(dt, utc=True)
+    elif not getattr(dt, 'tzinfo', None):
+        dt = pd.Timestamp(dt, tz='UTC')
+    return dt.tz_convert(BISHKEK_TZ).strftime('%d.%m.%Y %H:%M')
 
 # Путь к базе данных
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -751,7 +763,7 @@ with tab1:
                     
                     with col2:
                         if user['created_at']:
-                            created_date = pd.to_datetime(user['created_at']).strftime('%d.%m.%Y')
+                            created_date = to_bishkek(user['created_at'])
                             # Статус активности пользователя
                             if user['is_active']:
                                 status_text = "✅ Активен"
@@ -789,7 +801,7 @@ with tab1:
                             if history:
                                 st.markdown(f"**Всего ответов:** {len(history)}")
                                 for i, response in enumerate(history):
-                                    created_at = pd.to_datetime(response['created_at']).strftime('%d.%m.%Y %H:%M')
+                                    created_at = to_bishkek(response['created_at'])
                                     with st.expander(f"📅 {created_at}"):
                                         st.text(response['response_text'])
                                 
@@ -1059,7 +1071,7 @@ with tab2:
                                     <span style='color: var(--primary-color);'>Дни: {days_str}</span>
                                 </p>
                                 <p style="margin: 0; color: var(--text-secondary); font-size: 0.8rem;">
-                                    📅 Создана: {pd.to_datetime(group['created_at']).strftime('%d.%m.%Y')}
+                                    📅 Создана: {to_bishkek(group['created_at'])}
                                 </p>
                             </div>
                             """, unsafe_allow_html=True)
@@ -1201,18 +1213,18 @@ with tab2:
                                 
                                 with action_col3:
                                     if group['is_active']:
-                                        if st.button("❌", key=f"deactivate_{group['id']}", help="Деактивировать группу", use_container_width=True):
+                                        if st.button("❌", key=f"deactivate_{group['id']}", help="Удалить группу", use_container_width=True):
                                             try:
                                                 del_response = requests.delete(f"http://localhost:8000/api/groups/{group['id']}", timeout=10)
                                                 if del_response.status_code == 204:
-                                                    st.success("✅ Группа деактивирована!")
+                                                    st.success("✅ Группа удалена!")
                                                     st.rerun()
                                                 else:
-                                                    st.error("❌ Ошибка деактивации")
+                                                    st.error("❌ Ошибка удаления")
                                             except Exception as e:
                                                 st.error(f"❌ Ошибка: {e}")
                                     else:
-                                        st.markdown("⚪", help="Группа деактивирована")
+                                        st.markdown("⚪", help="Группа удалена")
                             
                             st.markdown("---")
             else:
@@ -1377,7 +1389,7 @@ with tab4:
                         for job in scheduler_info["jobs"]:
                             st.markdown(f"**{job['id']}** ({job['name']})")
                             if job['next_run_time']:
-                                st.caption(f"Следующий запуск: {job['next_run_time']}")
+                                st.caption(f"Следующий запуск: {to_bishkek(job['next_run_time'])}")
                             st.caption(f"Расписание: {job['trigger']}")
                             st.divider()
             else:
