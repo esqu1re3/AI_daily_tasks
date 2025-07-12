@@ -354,7 +354,7 @@ def generate_and_send_summary_for_group(group, users):
         
         # Формируем финальное сообщение для админа группы
         admin_message = f"📊 Вечерняя сводка планов группы '{group.name}'\n"
-        admin_message += f"📅 Дата: {datetime.now().strftime('%d/%m/%Y')}\n"
+        admin_message += f"📅 Дата: {datetime.now().strftime('%d.%m.%Y')}\n"
         admin_message += f"👥 Участников: {len(users)}\n"
         admin_message += f"✅ Ответили: {len(responded_users)}\n"
         admin_message += f"⏳ Не ответили: {len(not_responded_users)}\n\n"
