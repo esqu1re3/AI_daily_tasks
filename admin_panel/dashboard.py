@@ -481,19 +481,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def copy_to_clipboard_button(text: str, button_label: str = "📋 Копировать"):
-    """Render a copy button that shows a short confirmation message after copying."""
     components.html(
         f"""
-        <button style=\"background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;border-radius:8px;padding:0.4rem 1.2rem;font-weight:500;cursor:pointer;position:relative;overflow:hidden;\"
-                onclick=\"
-                    navigator.clipboard.writeText('{text}');
-                    const btn=this;
-                    const original=btn.innerHTML;
-                    btn.innerHTML='✅ Скопировано!';
-                    setTimeout(()=>btn.innerHTML=original,1500);
-                \">
-            {button_label}
-        </button>
+        <button onclick="
+            var textarea = document.createElement('textarea');
+            textarea.value = '{text}';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {{
+                document.execCommand('copy');
+                this.innerHTML = '✅ Скопировано!';
+                setTimeout(() => this.innerHTML = '{button_label}', 1500);
+            }} catch (err) {{
+                alert('Ошибка копирования');
+            }}
+            document.body.removeChild(textarea);
+        " 
+        style='background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;border-radius:8px;padding:0.4rem 1.2rem;font-weight:500;cursor:pointer;position:relative;overflow:hidden;'
+        >{button_label}</button>
         """,
         height=40,
     )
@@ -665,21 +670,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 st.markdown('<p class="subtitle">Система управления командой и сбора вечерних планов</p>', unsafe_allow_html=True)
-
-# Информационная панель
-st.markdown("""
-<div class="info-panel">
-    <h3 style="color: var(--text-primary); margin-top: 0;">🔗 Ссылка для активации участников команды</h3>
-    <div class="activation-link">
-        https://t.me/aidailytasksBot?start=group_activation
-    </div>
-    <p style="color: var(--text-secondary); margin-bottom: 0;">
-        📧 Отправьте эту ссылку участникам команды для автоматической активации в системе<br>
-        ⏰ <strong>Время рассылки:</strong> 17:30 (UTC+6)<br>
-        💡 <strong>Совет:</strong> При сбросе ответов всем участникам отправляется повторное напоминание
-    </p>
-</div>
-""", unsafe_allow_html=True)
 
 # Разделяем на вкладки
 tab1, tab2, tab3, tab4 = st.tabs(["👤 Участники", "🏢 Группы", "📊 Статистика", "🔧 Диагностика"])
